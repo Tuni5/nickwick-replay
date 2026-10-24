@@ -100,3 +100,14 @@ def test_the_path_through_the_real_seconds(arch):
     k = int(np.searchsorted(pr.t, r0 + 0.5, "right"))
     j = k + int(np.argmax(pr.side[k:] >= 0))
     assert f["price"] == pr.px[j] and f["t"] == pr.t[j]
+
+
+def test_tenths_of_a_contract_behave_like_micros():
+    """0.3 ES = three MES: the P/L is three tenths of the big contract's, the bracket follows the size"""
+    acts = [order(0.5, +1, "market", qty=0.3), {"op": "bracket", "t": 2.5, "tp": 101.50}, order(2.6, -1, "market", qty=0.1, oid="b")]
+    st = B.compute(acts, TAPE, 3.5)
+    assert st["pos"] == 0.2 and st["orders"][0]["qty"] == 0.2 and st["trades"][0]["qty"] == 0.1
+    assert st["trades"][0]["usd"] == round((100.00 - 100.25) * 0.1 * 50, 2)        # 0.1 ES at 50 $ a point = one MES at 5 $
+    st = B.compute(acts, TAPE, 10)
+    assert st["pos"] == 0 and st["trades"][1]["qty"] == 0.2 and st["trades"][1]["exit"] == 101.50
+    assert st["realized_usd"] == round(((100.00 - 100.25) * 0.1 + (101.50 - 100.25) * 0.2) * 50, 2)

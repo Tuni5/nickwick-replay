@@ -124,9 +124,11 @@ def broker_call(method, op, body, q):
         raise ValueError("t: the replay's time on that day")
     price = lambda k: None if body.get(k) in (None, "") else round(float(body[k]) / tick) * tick
     if op == "order":
-        side, kind, qty = int(body.get("side", 0)), str(body.get("type", "")), int(body.get("qty", 0))
-        if side not in (1, -1) or kind not in broker.TYPES or not 1 <= qty <= 100:
-            raise ValueError("side 1 or -1, type market / limit / stop, qty 1 to 100")
+        side, kind, qty = int(body.get("side", 0)), str(body.get("type", "")), round(float(body.get("qty", 0)), 1)
+        if side not in (1, -1) or kind not in broker.TYPES or not 0.1 <= qty <= 100:
+            raise ValueError("side 1 or -1, type market / limit / stop, qty 0.1 to 100 (tenths: a tenth of an ES is one MES)")
+        if qty == int(qty):
+            qty = int(qty)
         if kind != "market" and price("price") is None:
             raise ValueError(f"a {kind} order needs a price")
         act = {"op": "order", "t": t, "id": broker.new_id(), "side": side, "type": kind, "qty": qty, "price": price("price")}
@@ -257,6 +259,16 @@ class H(BaseHTTPRequestHandler):
 
     # ---- GET
     def do_GET(self):
+        try:
+            self._get()
+        except (ConnectionAbortedError, ConnectionResetError, BrokenPipeError):
+            raise
+        except Exception as ex:                                 # never a closed connection without an answer
+            import traceback
+            traceback.print_exc()
+            self._json({"error": f"{type(ex).__name__}: {ex}"}, 500)
+
+    def _get(self):
         route = urlparse(self.path).path
         try:
             if route == "/health":

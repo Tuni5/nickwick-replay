@@ -78,6 +78,21 @@ Databento, no MBO: the data are the Rithmic Bridge's archive and its live feed, 
   always on) and a phone (no drawing bar, trading panel folded). Checked at 1180 × 820, 820 × 1180, 390 × 844 in a
   headless browser - not on a real iPad.
 
+- New charts start with volume, the session VP and the VWAP; the TPO is added via Indikatoren when wanted. The
+  legend's indicator rows fold behind a chevron (kept per pane).
+
+- Drawings between windows: localStorage lags between Chromium renderers (a second key's write was not yet visible
+  when the first's was), so one window could miss another's deletion. Now every save sends the drawings and the
+  deletion log along in the BroadcastChannel message and the windows merge by id and time stamp (newer wins, a
+  deletion beats an older stamp; a window's undo brings back only what it deleted itself). Six of six runs of the
+  two-window scenario (A draws, B draws, A deletes, B undoes) end consistent.
+- The cursor of one window shows in the others (BroadcastChannel "tv-cross", a few times a second; the own mouse
+  wins). A floating drawing bar on the chart (TradingView's) with the common tools, draggable, off in the settings.
+  Live without a feed: the chip reads "No Live Market Data" in grey instead of a red LIVE.
+- Quantities in tenths of a contract (0.1 ES behaves like one MES, with the big contract's prints and a tenth of its
+  point value) in the broker, the ticket, the labels and the panel; "Max. Risiko": the contracts follow the risk
+  amount and the stop-loss distance, rounded down to a tenth.
+
 ## Checked in the browser (headless Chromium, the real day plus synthetic days)
 
 Scrolling back while playing at 30x loads the older sessions all the way (from = 0); the footprint on the real day at

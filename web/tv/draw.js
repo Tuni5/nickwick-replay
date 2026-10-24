@@ -54,14 +54,58 @@
                         lockAll: false, hidden: false, list: [], sel: null, make: null, drag: null, hover: null, undo: [], redo: [], inst: null,
                         last: TV.store.get("draw.last", {}), measure: null };
   const ch = ("BroadcastChannel" in window) ? new BroadcastChannel("tv-draw") : null;
-  const key = () => "draw.v1." + (D.inst || "ES");
-  D.load = function (inst) { D.inst = inst; D.list = TV.store.get(key(), []); D.sel = null; D.undo = []; D.redo = []; TV.app && TV.app.redrawAll(); D.styleBar(); };
-  D.save = function () { TV.store.set(key(), D.list.map(strip)); if (ch) ch.postMessage({ inst: D.inst }); TV.app.redrawAll(); D.styleBar(); if (D.treeOpen) D.treeOpen(); };
-  if (ch) ch.onmessage = e => { if (e.data && e.data.inst === D.inst) { D.list = TV.store.get(key(), []); if (!D.list.some(d => d.id === D.sel)) D.sel = null; TV.app.redrawAll(); D.styleBar(); } };
-  const strip = d => { const o = Object.assign({}, d); delete o._vp; delete o._vpKey; delete o._vpBusy; return o; };
+  const key = () => "draw.v1." + (D.inst || "ES"), delKey = () => "draw.del." + (D.inst || "ES");
+  // Several windows share the drawings of an instrument through localStorage. Each window keeps what it last saw of
+  // every drawing (its JSON); saving stamps changed drawings with the time (u), remembers deleted ids with the time,
+  // merges with what is in storage (newer stamp wins, a deletion beats an older stamp) and writes the merge - so two
+  // windows never overwrite each other's work, whichever saves last.
+  let seen = new Map();
+  const dels = () => { const d = TV.store.get(delKey(), {}), cut = Date.now() - 86400000; for (const k in d) if (d[k] < cut) delete d[k]; return d; };
+  function merge(local, remote, deleted) {
+    const out = new Map();
+    for (const r of remote) out.set(r.id, r);
+    for (const l of local) { const r = out.get(l.id); if (!r || (l.u || 0) >= (r.u || 0)) out.set(l.id, l); }
+    for (const id of Object.keys(deleted)) { const d = out.get(id); if (d && (d.u || 0) <= deleted[id]) out.delete(id); }
+    return [...out.values()];
+  }
+  D.load = function (inst) { D.inst = inst; D.list = TV.store.get(key(), []); seen = new Map(D.list.map(d => [d.id, JSON.stringify(strip(d))])); D.sel = null; D.undo = []; D.redo = []; TV.app && TV.app.redrawAll(); D.styleBar(); };
+  let gone = new Set();                                       // ids deleted here since the last save (explicit, not inferred)
+  const mine = new Set();                                     // ids this window deleted itself: its undo may bring those back
+  let known = {};                                             // deletions other windows told us about (localStorage lags between windows)
+  D.forget = ids => { for (const id of ids) { gone.add(id); mine.add(id); } };
+  D.save = function () {
+    const now = Date.now(), deleted = Object.assign(dels(), known);
+    for (const d of D.list) { const j = JSON.stringify(strip(d)); if (seen.get(d.id) !== j) { d.u = now; } }
+    for (const id of seen.keys()) if (!D.list.some(d => d.id === id)) deleted[id] = now;
+    for (const id of gone) if (!D.list.some(d => d.id === id)) deleted[id] = now;
+    gone = new Set();
+    const keep = new Map(D.list.filter(d => d === D.make || (D.drag && D.drag.d === d)).map(d => [d.id, d]));
+    D.list = merge(D.list.map(strip), TV.store.get(key(), []), deleted).map(d => keep.get(d.id) || d);
+    seen = new Map(D.list.map(d => [d.id, JSON.stringify(strip(d))]));
+    TV.store.set(key(), D.list.map(strip)); TV.store.set(delKey(), deleted); known = deleted;
+    if (ch) ch.postMessage({ inst: D.inst, list: D.list.map(strip), deleted });    // the data ride along: another window's localStorage may lag
+    TV.app.redrawAll(); D.styleBar(); if (D.treeOpen) D.treeOpen();
+  };
+  if (ch) ch.onmessage = e => {
+    if (!e.data || e.data.inst !== D.inst || !e.data.list) return;
+    known = Object.assign(known, e.data.deleted || {});
+    const busy = new Map(D.list.filter(d => d === D.make || (D.drag && D.drag.d === d)).map(d => [d.id, d]));
+    D.list = merge(D.list.map(strip), e.data.list, Object.assign(dels(), known)).map(d => busy.get(d.id) || d);
+    seen = new Map(D.list.map(d => [d.id, JSON.stringify(strip(d))]));
+    if (!D.list.some(d => d.id === D.sel)) D.sel = null;
+    TV.app.redrawAll(); D.styleBar();
+  };
+  const strip = d => { const o = Object.assign({}, d); delete o._vp; delete o._vpKey; delete o._vpBusy; delete o._box; return o; };
   D.snap = function () { D.undo.push(JSON.stringify(D.list.map(strip))); if (D.undo.length > 100) D.undo.shift(); D.redo = []; };
-  D.doUndo = function () { if (!D.undo.length) return; D.redo.push(JSON.stringify(D.list.map(strip))); D.list = JSON.parse(D.undo.pop()); D.sel = null; D.save(); };
-  D.doRedo = function () { if (!D.redo.length) return; D.undo.push(JSON.stringify(D.list.map(strip))); D.list = JSON.parse(D.redo.pop()); D.sel = null; D.save(); };
+  const restore = j => {
+    const before = D.list, others = Object.assign(dels(), known);
+    D.list = JSON.parse(j).filter(d => mine.has(d.id) || !(d.id in others) || before.some(x => x.id === d.id));   // not what another window deleted
+    const now = Date.now(); for (const d of D.list) d.u = now;
+    const dropped = before.filter(x => !D.list.some(d => d.id === x.id)).map(x => x.id); for (const id of dropped) mine.add(id);
+    D.forget(dropped); D.sel = null; D.save();
+  };
+  D.doUndo = function () { if (!D.undo.length) return; D.redo.push(JSON.stringify(D.list.map(strip))); restore(D.undo.pop()); };
+  D.doRedo = function () { if (!D.redo.length) return; D.undo.push(JSON.stringify(D.list.map(strip))); restore(D.redo.pop()); };
   D.selected = () => D.list.find(d => d.id === D.sel) || null;
   const nid = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
 
@@ -69,9 +113,9 @@
   D.setTool = function (t) {
     if (CURSORS[t]) { D.tool = null; if (t !== D.cursor) { D.cursor = t; TV.store.set("draw.cursor", t); TV.app.applyCursor(); } }
     else { D.tool = t; const g = GROUPS.find(x => x.tools.includes(t)); if (g) { D.last[g.id] = t; TV.store.set("draw.last", D.last); } }
-    D.make = null; D.measure = null; D.bar(); D.syncCross(); TV.app.redrawAll();
+    D.make = null; D.measure = null; D.bar(); D.syncCross(); TV.app.redrawAll(); TV.emit("tool");
   };
-  D.done = function () { if (!D.stay) D.tool = null; D.bar(); D.syncCross(); };
+  D.done = function () { if (!D.stay) D.tool = null; D.bar(); D.syncCross(); TV.emit("tool"); };
 
   // ---------------------------------------------------------------- geometry
   const X = (c, q) => c.xOf(q.t), Y = (c, q) => c.yOf(q.p);
@@ -370,7 +414,7 @@
       if (D.measure) { D.measure = null; TV.app.redrawAll(); if (!D.tool && !e.shiftKey) return true; }
       const tool = D.tool || (e.shiftKey && D.cursor !== "eraser" ? "measure" : null);
       if (!tool) {
-        if (D.cursor === "eraser") { const h = hitAny(c, x, y); if (h && !h.d.locked && !D.lockAll) { D.snap(); D.list = D.list.filter(d => d !== h.d); D.sel = null; D.save(); } return true; }
+        if (D.cursor === "eraser") { const h = hitAny(c, x, y); if (h && !h.d.locked && !D.lockAll) { D.remove(h.d); } return true; }
         return false;
       }
       const q = pt(c, x, y, e); if (!q) return true;
@@ -477,8 +521,8 @@
     let closed = false;
     const done = ok => {
       if (closed) return; closed = true; ta.remove();
-      if (ok) { D.snap(); d.s.text = ta.value; if (!d.s.text.trim() && fresh) D.list = D.list.filter(x => x !== d); }
-      else if (fresh && !d.s.text) D.list = D.list.filter(x => x !== d);
+      if (ok) { D.snap(); d.s.text = ta.value; if (!d.s.text.trim() && fresh) { D.list = D.list.filter(x => x !== d); D.forget([d.id]); } }
+      else if (fresh && !d.s.text) { D.list = D.list.filter(x => x !== d); D.forget([d.id]); }
       D.save();
     };
     ta.addEventListener("keydown", e => { e.stopPropagation(); if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); done(true); } if (e.key === "Escape") { e.preventDefault(); done(false); } });
@@ -567,7 +611,7 @@
     btn("trash", "Entfernen", false, () => D.removeAllMenu(b.lastChild), null);
   };
   D.removeAllMenu = anchor => TV.menu(anchor, [
-    { label: `${D.list.length} Zeichnung${D.list.length === 1 ? "" : "en"} entfernen`, icon: "trash", disabled: !D.list.length, action: () => { D.snap(); D.list = []; D.sel = null; D.save(); TV.toast("Alle Zeichnungen entfernt – Strg+Z holt sie zurück", "", 3000); } },
+    { label: `${D.list.length} Zeichnung${D.list.length === 1 ? "" : "en"} entfernen`, icon: "trash", disabled: !D.list.length, action: () => { D.snap(); D.forget(D.list.map(d => d.id)); D.list = []; D.sel = null; D.save(); TV.toast("Alle Zeichnungen entfernt – Strg+Z holt sie zurück", "", 3000); } },
     { label: "Indikatoren dieses Charts entfernen", icon: "fx", action: () => { const c = TV.app.active; for (const s of c.studies.list.slice()) c.studies.remove(s.id); } },
   ], { side: true });
 
@@ -594,7 +638,7 @@
     B(TV.iconSm("more", 18), "Mehr", b => D.menuFor(d, b));
   };
   const styleMemo = d => { const o = {}; for (const k of ["color", "width", "style", "fillColor", "textColor"]) if (k in d.s) o[k] = d.s[k]; return o; };
-  D.remove = function (d) { D.snap(); D.list = D.list.filter(x => x !== d); if (D.sel === d.id) D.sel = null; D.save(); };
+  D.remove = function (d) { D.snap(); D.list = D.list.filter(x => x !== d); D.forget([d.id]); if (D.sel === d.id) D.sel = null; D.save(); };
   D.clone = function (d) { D.snap(); const n = JSON.parse(JSON.stringify(strip(d))); n.id = nid(); const c = TV.app.active; const dt = c.tfSec() * 4; n.pts = n.pts.map(q => ({ t: q.t + dt, p: q.p })); D.list.push(n); D.sel = n.id; D.save(); };
   D.menuFor = function (d, at) {
     const items = [

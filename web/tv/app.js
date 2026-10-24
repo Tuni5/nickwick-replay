@@ -5,7 +5,7 @@
 (function () {
   const { el } = TV;
   const DEF_SET = { theme: "neu", up: "#089981", down: "#f23645", lineColor: "#2962ff", bg: "", grid: true, breaks: true, rthShade: true, countdown: true,
-                    plus: true, qt: true, orders: true, fills: true, syncCross: true };
+                    plus: true, qt: true, orders: true, fills: true, syncCross: true, quickbar: true, crossWindows: true };
   const LAYOUTS = {
     "1": { n: 1, cols: "1fr", rows: "1fr", name: "1 Chart" },
     "2h": { n: 2, cols: "1fr 1fr", rows: "1fr", name: "2 nebeneinander" },
@@ -63,7 +63,21 @@
     if (app.active === c) return;
     app.active = c; app.charts.forEach(x => x.el.classList.toggle("active", x === c)); app.saveLayout(); app.topState(); app.bottomBar();
   };
-  app.crossSync = function (src, cross) { if (!app.settings.syncCross) return; for (const c of app.charts) if (c !== src) c.setCross(cross); };
+  const crossCh = ("BroadcastChannel" in window) ? new BroadcastChannel("tv-cross") : null;
+  let crossAt = 0, remoteCross = null;
+  app.crossSync = function (src, cross) {
+    if (app.settings.syncCross) for (const c of app.charts) if (c !== src) c.setCross(cross);
+    if (crossCh && app.settings.crossWindows) {                  // the other windows see this cursor (a few times a second)
+      const now = performance.now();
+      if (!cross || now - crossAt > 40) { crossAt = now; crossCh.postMessage({ inst: app.inst(), cross: cross ? { t: cross.t, p: cross.p } : null }); }
+    }
+  };
+  if (crossCh) crossCh.onmessage = e => {
+    if (!app.settings.crossWindows || !e.data || e.data.inst !== app.inst()) return;
+    remoteCross = e.data.cross;
+    if (app.charts.some(c => c.cross)) return;                   // this window's own mouse wins
+    for (const c of app.charts) c.setCross(remoteCross);
+  };
   app.applyCursor = function () {
     const m = TV.Draw.cursor, lines = m === "cross", labels = m !== "arrow" && m !== "eraser";
     const pick = TV.Replay.selecting, draw = TV.Draw.busy();   // choosing a bar or drawing: the chart's own crosshair gives way
@@ -178,6 +192,33 @@
     bar.append(scaleBtn("pct", "%", "Prozentskala"), scaleBtn("log", "log", "Logarithmische Skala"), scaleBtn("auto", "auto", "Automatische Skalierung"));
   };
 
+  // ---------------------------------------------------------------- the floating tool bar on the chart (as TradingView's)
+  const QUICK = ["trend", "ray", "hline", "vline", "rect", "brush", "highlighter", "text", "note", "long", "short", "pricerange", "measure"];
+  app.quickBar = function () {
+    let bar = TV.$("#quickbar");
+    if (!app.settings.quickbar) { if (bar) bar.remove(); return; }
+    if (!bar) {
+      bar = el("div.stylebar"); bar.id = "quickbar"; bar.style.display = "flex"; bar.style.transform = "none";
+      const pos = TV.store.get("quickbar.pos", null); bar.style.left = (pos ? pos.x : 420) + "px"; bar.style.top = (pos ? pos.y : 48) + "px";
+      TV.$("#stage").append(bar);
+    }
+    bar.replaceChildren();
+    const grip = el("span.grip", { title: "Verschieben" }, TV.iconSm("grip", 18));
+    grip.addEventListener("pointerdown", e => {
+      e.preventDefault(); const st = TV.$("#stage").getBoundingClientRect(), r0 = bar.getBoundingClientRect(), dx = e.clientX - r0.left, dy = e.clientY - r0.top;
+      const mv = ev => { const x = Math.max(0, Math.min(st.width - r0.width, ev.clientX - st.left - dx)), y = Math.max(0, Math.min(st.height - r0.height, ev.clientY - st.top - dy)); bar.style.left = x + "px"; bar.style.top = y + "px"; };
+      const up = () => { window.removeEventListener("pointermove", mv); window.removeEventListener("pointerup", up); TV.store.set("quickbar.pos", { x: parseFloat(bar.style.left), y: parseFloat(bar.style.top) }); };
+      window.addEventListener("pointermove", mv); window.addEventListener("pointerup", up);
+    });
+    bar.append(grip);
+    for (const t of QUICK) {
+      const def = TV.DRAW_TOOLS[t];
+      bar.append(el("button" + (TV.Draw.tool === t ? ".on" : ""), { title: def.name + (def.key ? ` (${def.key})` : ""), onclick: e => { e.stopPropagation(); TV.Draw.setTool(TV.Draw.tool === t ? TV.Draw.cursor : t); } }, TV.iconSm(def.icon, 20)));
+    }
+    bar.append(el("button", { title: "Leiste ausblenden (Einstellungen → Erscheinung)", onclick: () => { app.settings.quickbar = false; app.saveSettings(); app.quickBar(); } }, TV.iconSm("close", 16)));
+  };
+  TV.on("tool", () => app.quickBar());
+
   // ---------------------------------------------------------------- the right bar
   app.rightBar = function () {
     const r = TV.$("#right"); r.replaceChildren();
@@ -227,13 +268,14 @@
 
   // ---------------------------------------------------------------- settings
   function settingsDialog() {
-    const S = app.settings, apply = () => { app.saveSettings(); document.body.className = document.body.className.replace(/th-\w+/, "th-" + S.theme); for (const c of app.charts) { c.restyle(); c.legend(); c.studies.need(); } };
+    const S = app.settings, apply = () => { app.saveSettings(); document.body.className = document.body.className.replace(/th-\w+/, "th-" + S.theme); for (const c of app.charts) { c.restyle(); c.legend(); c.studies.need(); } app.quickBar(); };
     TV.dialog({ title: "Chart-Einstellungen", width: 560, tabs: [
       { name: "Symbol", render: b => TV.form(b, [{ key: "up", label: "Kerzen steigend", type: "color", alpha: false }, { key: "down", label: "Kerzen fallend", type: "color", alpha: false },
                                                   { key: "lineColor", label: "Linie / Fläche", type: "color", alpha: false }], S, apply) },
       { name: "Erscheinung", render: b => TV.form(b, [{ key: "theme", label: "Design", type: "select", str: true, options: [["neu", "TradingView dunkel (neu, schwarz)"], ["klassik", "TradingView dunkel (klassisch, blau-grau)"]] },
                                                        { key: "grid", label: "Gitternetz", type: "bool" }, { key: "breaks", label: "Sessiongrenzen (18:00 NY) mit Datum", type: "bool" },
-                                                       { key: "rthShade", label: "RTH (09:30–16:00 NY) hervorheben", type: "bool" }, { key: "syncCross", label: "Fadenkreuz über alle Charts", type: "bool" }], S, apply) },
+                                                       { key: "rthShade", label: "RTH (09:30–16:00 NY) hervorheben", type: "bool" }, { key: "syncCross", label: "Fadenkreuz über alle Charts", type: "bool" },
+                                                       { key: "crossWindows", label: "Fadenkreuz auch in anderen Fenstern", type: "bool" }, { key: "quickbar", label: "Schwebende Zeichenleiste im Chart", type: "bool" }], S, apply) },
       { name: "Skalen", render: b => TV.form(b, [{ key: "countdown", label: "Countdown bis zum Kerzenschluss", type: "bool" }, { key: "plus", label: "+ an der Preisachse (Order / Linie)", type: "bool" }], S, apply) },
       { name: "Handel", render: b => TV.form(b, [{ key: "qt", label: "Kaufen / Verkaufen im Chart", type: "bool" }, { key: "orders", label: "Positionen und Orders im Chart", type: "bool" },
                                                   { key: "fills", label: "Ausführungen als Pfeile", type: "bool" }], S, apply) },
@@ -301,7 +343,11 @@
     for (const c of app.charts) c.frame(now);
     TV.Amt.frame(now); TV.Trade.frame(now); TV.Replay.update();
     const t = RC.now();
-    if (app.clockEl) { const live = TV.Replay.isLive(), txt = t == null ? "" : (live ? "LIVE · " : "REPLAY · ") + RC.fmtFull(t); if (app.clockEl.textContent !== txt) { app.clockEl.textContent = txt; app.clockEl.style.color = live ? "var(--down)" : "var(--text2)"; } }
+    if (app.clockEl) {
+      const live = TV.Replay.isLive(), feed = live && TV.Trade.liveFeedOk();
+      const txt = t == null ? "" : live ? (feed ? "LIVE · " + RC.fmtFull(t) : "No Live Market Data · " + RC.fmtFull(t)) : "REPLAY · " + RC.fmtFull(t);
+      if (app.clockEl.textContent !== txt) { app.clockEl.textContent = txt; app.clockEl.style.color = live ? (feed ? "var(--down)" : "var(--muted)") : "var(--text2)"; app.clockEl.title = live && !feed ? "Live, aber die Rithmic Bridge sendet gerade nichts für " + app.inst() : "Replay-Zeit"; }
+    }
     if (app.tzBtn && t != null) { const txt = RC.fmtTime(t, true) + (RC.tz() === "NY" ? " (New York)" : " (Wien)"); if (app.tzBtn.textContent !== txt) app.tzBtn.firstChild.textContent = txt; }
     const c = app.active, B = c && c.BARS, px = B && B.length ? B[B.length - 1].c : null;
     if (px != null && c.lastT != null) { if (lastPx != null && px !== lastPx) TV.Draw.checkAlerts(lastPx, px); lastPx = px; }
@@ -324,7 +370,7 @@
     TV.Replay.mount();
     app.top(); app.rightBar();
     TV.Draw.load(app.inst()); TV.Draw.bar();
-    app.buildCharts();
+    app.buildCharts(); app.quickBar();
     TV.Trade.renderBottom(); TV.Trade.renderTicket(true);
     if (TV.store.get("dw", false)) TV.FP.dwToggle(true);
     RC.connect(); TV.Replay.init();

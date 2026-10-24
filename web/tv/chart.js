@@ -181,7 +181,13 @@
         if (t != null && this.lastT != null && t === this.lastT && this.needT === t) this.needT = null;
         if (this.needT != null) { this.busy = true; const x = this.needT; this.needT = null; await this.tail(x); return; }
         if (this.needFrom != null && this.from != null && this.needFrom < this.from && this.lastT != null) { this.busy = true; const f = this.needFrom; this.needFrom = null; await this.older(f); }
-      } catch (e) { this.msg = "Fehler: " + e.message; }
+        this.fails = 0; if (this.msg.startsWith("Fehler")) this.msg = "";
+      } catch (e) {
+        this.fails = (this.fails || 0) + 1;                  // a request that failed: the next step tries again, the message only after three
+        if (this.fails >= 3) this.msg = "Fehler: " + e.message + (e.message === "Failed to fetch" ? " – der Server antwortet nicht (neu gestartet? Konsolenfenster prüfen)" : "");
+        if (t != null && this.needT == null) this.needT = t;
+        await new Promise(r => setTimeout(r, 400));
+      }
       finally { this.busy = false; }
     }
     async reload(t) {
@@ -245,7 +251,7 @@
       if (TV.FP && (this.cfg.type === "footprint" || this.fpOn)) TV.FP.frame(this);
       if (this._amtRev !== TV.Amt.rev) { this._amtRev = TV.Amt.rev; if (!this.cross) this.legendValues(); }
       const sec = Math.floor((RC.now() || 0));
-      if (this.app.settings.countdown && sec !== this._sec) { this._sec = sec; this.redraw(); }
+      if (sec !== this._sec) { this._sec = sec; this.redraw(); }      // the countdowns tick once a second
       if (this.msgEl.textContent !== this.msg) this.msgEl.textContent = this.msg;
     }
     // ---- a range of trade dates in view (the bottom bar's 1T 3T 5T ...)
@@ -319,8 +325,15 @@
       const title = el("div.lg-row");
       title.append(el("span.lg-title", { title: sp.name }, el("b", { text: inst }), el("span.ex", { text: ` · ${TV.tfShort(this.cfg.tf)} · CME` })));
       this.ohlcEl = el("span.lg-ohlc"); title.append(this.ohlcEl);
+      L.classList.toggle("folded", !!this.cfg.legendFolded);
       L.append(title);
-      if (TV.Trade && this.app.settings.qt) { const q = TV.Trade.quickBox(this); if (q) L.append(q); }
+      // the indicator rows fold behind a chevron under the title, as TradingView: folded, the count stays
+      const n = (this.cfg.studies || []).length, folded = !!this.cfg.legendFolded;
+      const fold = el("button.lg-fold", { title: folded ? "Indikatoren einblenden" : "Indikatoren ausblenden", onclick: () => { this.cfg.legendFolded = !this.cfg.legendFolded; this.app.saveLayout(); this.legend(); } },
+        TV.iconSm("down", 16), folded ? el("span", { text: String(n) }) : null);
+      if (folded) fold.firstChild.style.transform = "rotate(-90deg)";
+      L.append(fold);
+      if (TV.Trade && this.app.settings.qt) { const q = TV.Trade.quickBox(this); if (q) L.insertBefore(q, fold); }
       this.studyRows = el("div", { style: { display: "flex", flexDirection: "column", gap: "1px" } });
       L.append(this.studyRows);
       if (TV.FP) { const r = TV.FP.legendRow(this); if (r) this.studyRows.append(r); }

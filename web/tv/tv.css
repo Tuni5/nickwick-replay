@@ -84,7 +84,8 @@ body.ticket-open #ticket { display: block; }
 .lg-study:hover .btns { display: inline-flex; }
 .lg-btn { width: 22px; height: 20px; border: 0; background: none; border-radius: 3px; display: inline-flex; align-items: center; justify-content: center; color: var(--text2); cursor: pointer; padding: 0; }
 .lg-btn:hover { background: var(--hover); color: var(--text); }
-.lg-collapse { pointer-events: auto; }
+.lg-fold { pointer-events: auto; height: 18px; border: 0; background: none; color: var(--muted); cursor: pointer; display: inline-flex; align-items: center; gap: 3px; padding: 0 2px; border-radius: 3px; width: max-content; font-size: 12px; }
+.lg-fold:hover { background: var(--hover); color: var(--text); }
 .legend.folded .lg-study { display: none; }
 .qt { display: flex; align-items: stretch; height: 34px; pointer-events: auto; margin: 3px 0 2px; user-select: none; }
 .qt button { border: 1px solid; background: color-mix(in srgb, var(--bg) 82%, transparent); cursor: pointer; padding: 0 8px; display: flex; flex-direction: column; justify-content: center; min-width: 74px; font-variant-numeric: tabular-nums; }
@@ -110,7 +111,7 @@ body.ticket-open #ticket { display: block; }
 /* ---------------------------------------------------------------- bottom chart bar */
 #cbar { display: flex; align-items: center; gap: 2px; padding: 0 6px; border-top: 1px solid var(--line); background: var(--panel); font-size: 12px; }
 #cbar .tb { height: 24px; font-size: 12px; padding: 0 7px; }
-#cbar .tz { font-variant-numeric: tabular-nums; }
+#cbar .tz { font-variant-numeric: tabular-nums; font-size: 14px; font-weight: 500; color: var(--text); }
 
 /* ---------------------------------------------------------------- replay bar */
 #replay { position: relative; z-index: 5; background: var(--panel); border-top: 1px solid var(--line); display: flex; flex-direction: column; user-select: none; min-width: 0; }

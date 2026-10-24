@@ -29,6 +29,8 @@ Fills:
   modify         a working limit or stop at a new price; its attached sl / tp moved or removed (None)
   flatten        cancels everything, closes the position at market
 One order fills completely on one print. Searching is numpy over the prints from the current moment on.
+Quantities are contracts in steps of 0.1 (a tenth of an ES behaves like one MES: the micro contracts are traded as
+fractions of the big one, with the big one's prints).
 """
 import json
 import os
@@ -125,12 +127,14 @@ def compute(actions, pr, until, root="ES"):
             return
         side = -1 if pos > 0 else 1
         if bracket["sl"] is not None:
-            working.append({"id": "sl", "role": "sl", "side": side, "type": "stop", "price": bracket["sl"], "qty": abs(pos)})
+            working.append({"id": "sl", "role": "sl", "side": side, "type": "stop", "price": bracket["sl"], "qty": q1(abs(pos))})
         if bracket["tp"] is not None:
-            working.append({"id": "tp", "role": "tp", "side": side, "type": "limit", "price": bracket["tp"], "qty": abs(pos)})
+            working.append({"id": "tp", "role": "tp", "side": side, "type": "limit", "price": bracket["tp"], "qty": q1(abs(pos))})
+
+    q1 = lambda x: round(x + 0.0, 1)                               # quantities in tenths, no float drift
 
     def fill(order, i, price):
-        qty, side, t = order["qty"], order["side"], float(pr.t[i])
+        qty, side, t = q1(order["qty"]), order["side"], float(pr.t[i])
         fills.append({"t": t, "id": order["id"], "side": side, "qty": qty, "price": price, "type": order["type"], "role": order.get("role")})
         pos, avg = state["pos"], state["avg"]
         signed = side * qty
@@ -138,16 +142,16 @@ def compute(actions, pr, until, root="ES"):
             if pos == 0:
                 state["since"] = t
             state["avg"] = (avg * abs(pos) + price * qty) / (abs(pos) + qty)
-            state["pos"] = pos + signed
+            state["pos"] = q1(pos + signed)
         else:                                                  # reducing, closing or flipping
-            closing = min(qty, abs(pos))
+            closing = q1(min(qty, abs(pos)))
             pnl = (price - avg) * closing * (1 if pos > 0 else -1)
             state["realized"] += pnl
             trades.append({"side": "long" if pos > 0 else "short", "qty": closing, "entry": avg, "exit": price,
                            "t_in": state["since"], "t_out": t, "points": pnl / closing, "ticks": round(pnl / closing / tick, 2),
                            "usd": round(pnl * point, 2), "exit_by": order.get("role") or order["type"]})
-            rest = qty - closing
-            pos += (1 if signed > 0 else -1) * closing
+            rest = q1(qty - closing)
+            pos = q1(pos + (1 if signed > 0 else -1) * closing)
             if pos == 0:
                 avg, state["since"] = 0.0, None
             if rest:                                           # flipped: the rest opens the other way
@@ -216,7 +220,7 @@ def compute(actions, pr, until, root="ES"):
             bracket["sl"] = bracket["tp"] = None
             if state["pos"]:
                 working.append({"id": f"flat{a.get('seq', 0)}", "side": -1 if state["pos"] > 0 else 1, "type": "market",
-                                "qty": abs(state["pos"]), "t": a["t"], "role": "flatten"})
+                                "qty": q1(abs(state["pos"])), "t": a["t"], "role": "flatten"})
     hi = int(np.searchsorted(pr.t, until, "right"))
     run(lo, hi)
     pos, avg = state["pos"], state["avg"]

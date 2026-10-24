@@ -18,7 +18,11 @@
   const snap = p => Math.round(p / tk()) * tk();
   const T = TR.ticket = Object.assign({ side: 1, type: "market", qty: 1, price: null, tpOn: false, tpTicks: 16, slOn: false, slTicks: 8, balance: 50000 }, TV.store.get("ticket", {}));
   const saveT = () => TV.store.set("ticket", Object.assign({}, T, { price: null }));
-  TR.qty = () => Math.max(1, Math.min(100, +T.qty || 1));
+  const q1 = v => Math.round(Math.max(0.1, Math.min(100, +v || 0.1)) * 10) / 10;   // contracts in tenths: 0.1 ES is one MES
+  TV.fq = v => (Math.round(v * 10) / 10).toString();
+  // the size from the risk: with "Max. Risiko" on and a stop loss set, the contracts follow the risk (rounded down to a tenth)
+  TR.sized = (tickV) => T.riskOn && T.slOn && T.slTicks > 0 && T.risk > 0 ? Math.max(0.1, Math.floor(T.risk / (T.slTicks * tickV) * 10) / 10) : null;
+  TR.qty = () => q1(T.qty);
   const rootOf = s => { const m = /^([A-Z0-9]+?)[FGHJKMNQUVXZ]\d{1,2}$/.exec(s || ""); return m ? m[1] : s; };
 
   // ---------------------------------------------------------------- the account at the clock
@@ -29,7 +33,7 @@
     return `${inst}.1m@${RC.tradeDate(RC.now())}`;
   };
   async function liveFeeds() { try { TR.live = (await TV.getJSON("/feeds")).filter(f => !f.history); } catch (e) {} }
-  setInterval(() => { if (RC.state && RC.state.live) liveFeeds(); }, 5000);
+  setInterval(() => { if (RC.state && RC.state.live) liveFeeds(); }, 3000); liveFeeds();
   TR.last = () => { if (TR.ST && TR.ST.last != null) return TR.ST.last; const c = TV.app.active; const B = c && c.BARS; return B && B.length ? B[B.length - 1].c : null; };
   let pollAt = 0, seq = 0;
   TR.refresh = async function () {
@@ -62,8 +66,10 @@
   TR.post = post;
   const sideName = s => s > 0 ? "Kaufen" : "Verkaufen";
   const typeName = t => ({ market: "Markt", limit: "Limit", stop: "Stop" })[t];
-  TR.market = (side, qty, extra) => post("order", Object.assign({ side, type: "market", qty: qty || TR.qty() }, extra || {}));
-  TR.order = (side, type, price, qty, extra) => post("order", Object.assign({ side, type, qty: qty || TR.qty(), price: snap(price) }, extra || {}));
+  TR.market = (side, qty, extra) => post("order", Object.assign({ side, type: "market", qty: qty || TR.sized(tk() * pv()) || TR.qty() }, extra || {}));
+  TR.order = (side, type, price, qty, extra) => post("order", Object.assign({ side, type, qty: qty || TR.sized(tk() * pv()) || TR.qty(), price: snap(price) }, extra || {}));
+  // where a feed stands in live: a fresh one for the instrument, or none ("No Live Market Data")
+  TR.liveFeedOk = () => { const inst = TV.app.inst(); return TR.live.some(f => rootOf(f.instrument) === inst && !f.stale); };
   TR.flatten = () => post("flatten", {});
   TR.cancelAll = () => post("cancel_all", {});
   TR.reverse = async () => { const st = TR.ST; if (!st || !st.pos) return; const n = Math.abs(st.pos), side = st.pos > 0 ? -1 : 1; await post("flatten", {}, true); await TR.market(side, n); };
@@ -80,10 +86,10 @@
   // ---------------------------------------------------------------- quick buttons in the legend
   TR.quickBox = function (c) {
     const sp = el("span", { text: "–" }), bp = el("span", { text: "–" });
-    const q = el("input.qq", { value: TR.qty(), title: "Kontrakte" });
+    const q = el("input.qq", { value: TV.fq(TR.sized(tk() * pv()) ?? TR.qty()), title: "Kontrakte (0.1 = ein Micro)" });
     q.addEventListener("mousedown", e => e.stopPropagation());
     q.addEventListener("keydown", e => e.stopPropagation());
-    q.addEventListener("change", () => { T.qty = Math.max(1, Math.min(100, Math.round(+q.value || 1))); q.value = T.qty; saveT(); TR.renderTicket(); TV.app.charts.forEach(x => x.legend()); });
+    q.addEventListener("change", () => { T.qty = q1(q.value); q.value = TV.fq(T.qty); saveT(); TR.renderTicket(); TV.app.charts.forEach(x => x.legend()); });
     const box = el("div.qt", null,
       el("button.qs", { title: "Verkaufen zum Markt (Shift+S)", onclick: e => { e.stopPropagation(); TR.market(-1); } }, el("small", { text: "VERKAUFEN" }), sp),
       q,
@@ -119,8 +125,8 @@
   }
   function labelParts(it) {
     const money = v => TV.fusd(v, true), t = tk();
-    if (it.kind === "pos") return { head: `${it.qty > 0 ? "L" : "S"} ${Math.abs(it.qty)}`, body: T.unit === "ticks" ? `${it.ticks >= 0 ? "+" : "−"}${Math.abs(it.ticks)} T` : money(it.pnl), x: true, tpsl: [TR.ST.bracket.tp == null && "tp", TR.ST.bracket.sl == null && "sl"].filter(Boolean) };
-    if (it.kind === "ord") return { head: `${it.side > 0 ? "KAUF" : "VERK"} ${it.type === "limit" ? "LMT" : "STP"}`, body: String(it.qty), x: true, tpsl: [it.o.tp == null && "tp", it.o.sl == null && "sl"].filter(Boolean) };
+    if (it.kind === "pos") return { head: `${it.qty > 0 ? "L" : "S"} ${TV.fq(Math.abs(it.qty))}`, body: T.unit === "ticks" ? `${it.ticks >= 0 ? "+" : "−"}${Math.abs(it.ticks)} T` : money(it.pnl), x: true, tpsl: [TR.ST.bracket.tp == null && "tp", TR.ST.bracket.sl == null && "sl"].filter(Boolean) };
+    if (it.kind === "ord") return { head: `${it.side > 0 ? "KAUF" : "VERK"} ${it.type === "limit" ? "LMT" : "STP"}`, body: TV.fq(it.qty), x: true, tpsl: [it.o.tp == null && "tp", it.o.sl == null && "sl"].filter(Boolean) };
     const name = it.kind.endsWith("tp") ? "TP" : "SL", v = pnlAt(it.price, it.entry, it.qty * it.sign);
     return { head: name, body: (T.unit === "ticks" ? `${v >= 0 ? "+" : "−"}${Math.round(Math.abs(it.price - it.entry) / t)} T` : money(v)), x: !it.preview, tpsl: [] };
   }
@@ -267,7 +273,7 @@
     return false;
   };
   TR.priceItems = function (price) {
-    const last = TR.last(), q = TR.qty(), p = TV.fp(price, tk()), out = [];
+    const last = TR.last(), q = TV.fq(TR.sized(tk() * pv()) ?? TR.qty()), p = TV.fp(price, tk()), out = [];
     if (last == null) return out;
     const below = price < last;
     out.push({ label: `Kaufen ${q} @ ${p} ${below ? "Limit" : "Stop"}`, icon: "order", color: "#6e93ff", action: () => TR.order(1, below ? "limit" : "stop", price) });
@@ -301,7 +307,7 @@
     if (T.type !== "market" && T.price == null && last != null) T.price = last;
     const ref = T.type === "market" ? last : T.price;
     const tpP = ref != null ? ref + T.side * T.tpTicks * t : null, slP = ref != null ? ref - T.side * T.slTicks * t : null;
-    const tickV = t * pv(), q = TR.qty();
+    const tickV = t * pv(), sized = TR.sized(tickV), q = sized != null ? sized : TR.qty();
     box.replaceChildren(...[
       el("div.tk-head", null, el("div", null, el("div.ti", { text: inst }), el("div.sub", { text: sp.name + " · CME" })), el("button.dx.lg-btn", { title: "Schließen", onclick: () => TR.openTicket(false) }, TV.icon("close"))),
       el("div.tk-sides", null,
@@ -310,10 +316,14 @@
       el("div.tk-tabs", null, ...["market", "limit", "stop"].map(k => el("button" + (T.type === k ? ".on" : ""), { text: typeName(k), onclick: () => { T.type = k; T.price = k === "market" ? null : (last != null ? last : T.price); saveT(); TR.renderTicket(true); } }))),
       T.type !== "market" ? el("div.tk-sec", null, el("div.tk-lab", null, el("span", { text: T.type === "limit" ? "Limitpreis" : "Stoppreis" }), el("span", { text: last != null ? `Markt ${TV.fp(last, t)}` : "" })),
         num(TV.fp(T.price, t), t, v => { T.price = snap(v); TR.renderTicket(true); })) : null,
-      el("div.tk-sec", null, el("div.tk-lab", null, el("span", { text: "Kontrakte" }), el("span", { text: `Tickwert ${TV.fusd(tickV)}` })),
-        num(q, 1, v => { T.qty = Math.max(1, Math.min(100, Math.round(v || 1))); saveT(); TR.renderTicket(true); TV.app.charts.forEach(c => c.legend()); })),
+      el("div.tk-sec", null, el("div.tk-lab", null, el("span", { text: "Kontrakte (0.1 = ein Micro)" }), el("span", { text: `Tickwert ${TV.fusd(tickV)}` })),
+        num(TV.fq(q), 0.1, v => { T.qty = q1(v); saveT(); TR.renderTicket(true); TV.app.charts.forEach(c => c.legend()); }, null, { dis: sized != null }),
+        el("label.tk-chk", { style: { marginTop: "8px" } }, el("input", { type: "checkbox", checked: !!T.riskOn, onchange: e => { T.riskOn = e.target.checked; saveT(); TR.renderTicket(true); TV.app.charts.forEach(c => c.legend()); } }), el("span", { text: "Max. Risiko – Kontrakte aus Betrag und Stop Loss" })),
+        el("div.tk-row" + (T.riskOn ? "" : ".tk-dis"), { style: { marginTop: "6px" } }, num(T.risk || 250, 50, v => { T.risk = Math.max(0, Math.round(v)); saveT(); TR.renderTicket(true); TV.app.charts.forEach(c => c.legend()); }, "$")),
+        T.riskOn && !T.slOn ? el("div.tk-lab", { style: { marginTop: "4px" }, text: "Dafür muss der Stop Loss unten aktiv sein" }) : null),
       bracketSec("tp", "Take Profit", tpP, tickV * q), bracketSec("sl", "Stop Loss", slP, tickV * q),
       el("div.tk-info", null,
+        el("span", { text: "Kontrakte" }), el("span", { text: TV.fq(q) + (sized != null ? " (aus Risiko)" : "") }),
         el("span", { text: "Risiko" }), el("span", { text: T.slOn ? TV.fusd(T.slTicks * tickV * q) : "–" }),
         el("span", { text: "Gewinnziel" }), el("span", { text: T.tpOn ? TV.fusd(T.tpTicks * tickV * q) : "–" }),
         el("span", { text: "Chance / Risiko" }), el("span", { text: T.tpOn && T.slOn ? (T.tpTicks / T.slTicks).toFixed(2) : "–" })),
@@ -340,7 +350,7 @@
           if (kind === "stop" && last != null && (s > 0 ? T.price <= last : T.price >= last)) { TV.toast(`Stop-Order ${s > 0 ? "über" : "unter"} dem Markt (${TV.fp(last, t)}) setzen`, "err"); return; }
           TR.order(s, kind, T.price, q, ex);
         }
-      } }, `${sideName(s)} ${q} ${inst} @ ${kind === "market" ? "Markt" : TV.fp(T.price, t) + " " + typeName(kind)}`, el("small", { text: extra.join(" · ") || (kind === "limit" ? "Limit-Order" : kind === "stop" ? "Stop-Order" : "Market-Order") }));
+      } }, `${sideName(s)} ${TV.fq(q)} ${inst} @ ${kind === "market" ? "Markt" : TV.fp(T.price, t) + " " + typeName(kind)}`, el("small", { text: extra.join(" · ") || (kind === "limit" ? "Limit-Order" : kind === "stop" ? "Stop-Order" : "Market-Order") }));
     }
   };
   function updTicketPrices() { const l = TR.last(); TV.$$("#ticket .tkp").forEach(x => x.textContent = TV.fp(l, tk())); }
@@ -394,21 +404,21 @@
     const xCell = (title, fn) => el("td.x", { title, onclick: fn, text: "×" });
     if (tab === "pos") {
       const rows = [];
-      if (st.pos) rows.push(el("tr", null, cell(inst), cell(st.pos > 0 ? "Long" : "Short", st.pos > 0 ? "side-buy" : "side-sell"), cell(String(Math.abs(st.pos)), "num"),
+      if (st.pos) rows.push(el("tr", null, cell(inst), cell(st.pos > 0 ? "Long" : "Short", st.pos > 0 ? "side-buy" : "side-sell"), cell(TV.fq(Math.abs(st.pos)), "num"),
         cell(TV.fp(st.avg, t), "num"), cell(st.bracket.tp != null ? TV.fp(st.bracket.tp, t) : "–", "num"), cell(st.bracket.sl != null ? TV.fp(st.bracket.sl, t) : "–", "num"),
         cell(TV.fp(st.last, t), "num"), cell(`${st.open_ticks >= 0 ? "+" : ""}${st.open_ticks}`, "num " + (st.open_usd >= 0 ? "up" : "dn")), cell(TV.fusd(st.open_usd, true), "num " + (st.open_usd >= 0 ? "up" : "dn")),
         xCell("Position schließen", () => TR.flatten())));
       wrap.append(tbl([["Symbol"], ["Seite"], ["Menge", "num"], ["Ø Preis", "num"], ["Take Profit", "num"], ["Stop Loss", "num"], ["Letzter", "num"], ["G&V Ticks", "num"], ["G&V", "num"], [""]], rows, "Keine offene Position"));
     } else if (tab === "ord") {
       const rows = st.orders.filter(o => o.role !== "flatten").map(o => el("tr", null, cell(inst), cell(o.role === "sl" ? "SL" : o.role === "tp" ? "TP" : o.side > 0 ? "Kaufen" : "Verkaufen", o.side > 0 ? "side-buy" : "side-sell"),
-        cell(typeName(o.type)), cell(String(o.qty), "num"), cell(o.price != null ? TV.fp(o.price, t) : "–", "num"), cell(o.tp != null ? TV.fp(o.tp, t) : "–", "num"), cell(o.sl != null ? TV.fp(o.sl, t) : "–", "num"),
+        cell(typeName(o.type)), cell(TV.fq(o.qty), "num"), cell(o.price != null ? TV.fp(o.price, t) : "–", "num"), cell(o.tp != null ? TV.fp(o.tp, t) : "–", "num"), cell(o.sl != null ? TV.fp(o.sl, t) : "–", "num"),
         cell(o.role ? "Klammer" : "Arbeitet"), cell(o.t ? RC.fmtTime(o.t, true) : ""),
         xCell("Stornieren", () => o.role ? post("bracket", { [o.role]: null }) : post("cancel", { id: o.id }))));
       wrap.append(tbl([["Symbol"], ["Seite"], ["Typ"], ["Menge", "num"], ["Preis", "num"], ["TP", "num"], ["SL", "num"], ["Status"], ["Zeit"], [""]], rows, "Keine wartenden Orders"));
     } else if (tab === "hist") {
       const by = { market: "Markt", limit: "Limit", stop: "Stop", sl: "Stop Loss", tp: "Take Profit", flatten: "Glattgestellt" };
       const rows = st.trades.slice().reverse().map(x => el("tr", null, cell(RC.fmtTime(x.t_in, true)), cell(RC.fmtTime(x.t_out, true)), cell(x.side === "long" ? "Long" : "Short", x.side === "long" ? "side-buy" : "side-sell"),
-        cell(String(x.qty), "num"), cell(TV.fp(x.entry, t), "num"), cell(TV.fp(x.exit, t), "num"), cell(`${x.ticks >= 0 ? "+" : ""}${x.ticks}`, "num " + (x.usd >= 0 ? "up" : "dn")),
+        cell(TV.fq(x.qty), "num"), cell(TV.fp(x.entry, t), "num"), cell(TV.fp(x.exit, t), "num"), cell(`${x.ticks >= 0 ? "+" : ""}${x.ticks}`, "num " + (x.usd >= 0 ? "up" : "dn")),
         cell(TV.fusd(x.usd, true), "num " + (x.usd >= 0 ? "up" : "dn")), cell(by[x.exit_by] || x.exit_by), cell(TV.fdur(x.t_out - x.t_in))));
       wrap.append(tbl([["Einstieg"], ["Ausstieg"], ["Seite"], ["Menge", "num"], ["Einstiegspreis", "num"], ["Ausstiegspreis", "num"], ["Ticks", "num"], ["G&V", "num"], ["Ausstieg durch"], ["Dauer"]], rows, "Noch keine abgeschlossenen Trades an diesem Tag"));
     } else {

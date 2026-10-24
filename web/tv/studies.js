@@ -227,6 +227,14 @@
                { key: "poc", label: "Overnight-POC", type: "bool", with: [{ key: "pocColor", type: "color" }] }],
       make: (S, st) => onStudy(S, st),
     },
+    timer: {
+      name: "Bar-Timer (Countdown und Uhr)", group: "Werkzeug", short: () => "Bar-Timer",
+      defaults: { corner: "br", size: 22, clock: true, color: "#d1d4dc", bg: "rgba(30,30,30,0.75)" },
+      schema: [{ key: "corner", label: "Ecke", type: "select", str: true, options: [["br", "unten rechts"], ["tr", "oben rechts"], ["bl", "unten links"]] },
+               { key: "size", label: "Schriftgröße", type: "num", min: 12, max: 60 }, { key: "clock", label: "Replay-Uhrzeit dazu", type: "bool" },
+               { key: "color", label: "Schrift", type: "color" }, { key: "bg", label: "Hintergrund", type: "color" }],
+      make: (S, st) => timerStudy(S, st),
+    },
     week: {
       name: "Wochenprofil", group: "Volumenprofil", short: () => "Woche",
       defaults: { color: "rgba(41,98,255,0.16)", va: "rgba(41,98,255,0.34)", poc: "rgba(242,54,69,0.7)", width: 60 },
@@ -603,6 +611,27 @@
     });
     return { destroy() { c.removeLayer(layer); } };
   }
+  // ---------------------------------------------------------------- the bar timer: time to the bar's close, big
+  function timerStudy(S, st) {
+    const c = S.c, p = st.p;
+    const layer = c.addLayer("top", {
+      draw(ctx, w, h) {
+        if (!st.on) return;
+        const B = c.BARS, now = RC.now(); if (!B.length || now == null) return;
+        const b = B[B.length - 1], rem = Math.max(0, b.t + c.tfSec() - now);
+        const lines = [TV.clock(rem)]; if (p.clock) lines.push(RC.fmtTime(now, true) + (RC.tz() === "NY" ? " NY" : " Wien"));
+        ctx.font = `600 ${p.size}px ` + getComputedStyle(document.body).getPropertyValue("--font");
+        const tw = Math.max(...lines.map(x => ctx.measureText(x).width)), lh = p.size * 1.25, bw = tw + 24, bh = lh * lines.length + 14;
+        const x = p.corner.endsWith("l") ? 12 : w - bw - 12, y = p.corner.startsWith("t") ? 56 : h - bh - 12;
+        ctx.fillStyle = p.bg; ctx.beginPath(); ctx.roundRect ? ctx.roundRect(x, y, bw, bh, 6) : ctx.rect(x, y, bw, bh); ctx.fill();
+        ctx.fillStyle = p.color; ctx.textAlign = "center"; ctx.textBaseline = "middle";
+        lines.forEach((t, i) => { if (i) ctx.font = `${Math.round(p.size * 0.6)}px ` + getComputedStyle(document.body).getPropertyValue("--font"); ctx.fillText(t, x + bw / 2, y + 7 + lh * (i + 0.5)); });
+        ctx.textAlign = "left";
+      },
+    });
+    return { destroy() { c.removeLayer(layer); }, vals() { const B = c.BARS, now = RC.now(); if (!B.length || now == null) return []; return [{ text: TV.clock(Math.max(0, B[B.length - 1].t + c.tfSec() - now)), color: p.color }]; } };
+  }
+
   // ---------------------------------------------------------------- week profiles (behind the candles)
   const weekOf = td => { const d = new Date(td + "T12:00:00Z"); d.setUTCDate(d.getUTCDate() - ((d.getUTCDay() + 6) % 7)); return d.toISOString().slice(0, 10); };
   function weekStudy(S, st) {
@@ -638,7 +667,7 @@
   let seq = 0;
   TV.studyDefaults = type => Object.assign({}, DEFS[type].defaults, TV.store.get("study.defaults." + type, {}));   // built-in, then what the user saved as standard
   TV.newStudy = (type, p) => ({ id: "s" + Date.now().toString(36) + (seq++), type, on: true, p: Object.assign(TV.studyDefaults(type), p || {}) });
-  TV.DEFAULT_STUDIES = () => [TV.newStudy("vol"), TV.newStudy("svp"), TV.newStudy("tpo"), TV.newStudy("vwap")];
+  TV.DEFAULT_STUDIES = () => [TV.newStudy("vol"), TV.newStudy("svp"), TV.newStudy("vwap")];     // TPO: via Indikatoren when wanted
 
   class Studies {
     constructor(c) {
