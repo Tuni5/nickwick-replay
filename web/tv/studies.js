@@ -129,57 +129,58 @@
   // ================================================================ the indicators
   const VP_COLORS = { up: "rgba(41,98,255,0.30)", down: "rgba(251,192,45,0.30)", vaUp: "rgba(41,98,255,0.72)", vaDown: "rgba(251,192,45,0.72)" };
   const VP_GREY = { up: "rgba(120,123,134,0.45)", down: "rgba(120,123,134,0.45)", vaUp: "rgba(178,181,190,0.78)", vaDown: "rgba(178,181,190,0.78)" };
-  const NUMBERS_SCHEMA = [{ key: "numbers", label: "Zahlen auf den Zeilen", type: "select", str: true, options: [["exact", "genau"], ["short", "gekürzt (2K)"], ["off", "aus"]], with: [{ key: "numDelta", type: "select", options: [[0, "Volumen"], [1, "Volumen und Delta"]] }] }];
-  const COLOR_SCHEMA = [{ head: "Farben" }, { key: "split", label: "Auf-/Ab-Volumen getrennt", type: "bool" },
-    { key: "vaUp", label: "Value Area: auf / ab", type: "color", with: [{ key: "vaDown", type: "color" }] },
-    { key: "up", label: "Außerhalb VA: auf / ab", type: "color", with: [{ key: "down", type: "color" }] },
+  const NUMBERS_SCHEMA = [{ key: "numbers", label: "Numbers on the rows", type: "select", str: true, options: [["exact", "exact"], ["short", "short (2K)"], ["off", "off"]], with: [{ key: "numDelta", type: "select", options: [[0, "Volume"], [1, "Volume and delta"]] }] }];
+  const COLOR_SCHEMA = [{ head: "Colors" }, { key: "split", label: "Up / down volume apart", type: "bool" },
+    { key: "vaUp", label: "Value area: up / down", type: "color", with: [{ key: "vaDown", type: "color" }] },
+    { key: "up", label: "Outside VA: up / down", type: "color", with: [{ key: "down", type: "color" }] },
     { key: "poc", label: "POC", type: "color", with: [{ key: "pocW", type: "select", options: [[1, "1px"], [2, "2px"], [3, "3px"]] }] }];
   const PERIOD_COLORS = ["#2962ff", "#00bcd4", "#089981", "#4caf50", "#8bc34a", "#cddc39", "#ffeb3b", "#ffc107", "#ff9800", "#ff5722", "#f23645", "#e91e63", "#9c27b0", "#673ab7"];
   const LETTERS = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz";
 
   const DEFS = TV.STUDY_DEFS = {
     vol: {
-      name: "Volumen", group: "Volumen", short: () => "Volumen",
+      name: "Volume", group: "Volume", short: () => "Volume",
       defaults: { up: "rgba(8,153,129,0.5)", down: "rgba(242,54,69,0.5)", ma: false, maLen: 20, maColor: "#2962ff", height: 18 },
-      schema: [{ key: "up", label: "Steigend / fallend", type: "color", with: [{ key: "down", type: "color" }] },
-               { key: "height", label: "Höhe (% des Charts)", type: "num", min: 5, max: 60 },
-               { key: "ma", label: "Gleitender Durchschnitt", type: "bool", with: [{ key: "maLen", type: "num", min: 2, max: 400 }, { key: "maColor", type: "color" }] }],
+      schema: [{ key: "up", label: "Rising / falling", type: "color", with: [{ key: "down", type: "color" }] },
+               { key: "height", label: "Height (% of the chart)", type: "num", min: 5, max: 60 },
+               { key: "ma", label: "Moving average", type: "bool", with: [{ key: "maLen", type: "num", min: 2, max: 400 }, { key: "maColor", type: "color" }] }],
       make: (S, st) => volStudy(S, st),
     },
     ma: {
-      name: "Gleitender Durchschnitt", group: "Trend", short: p => `${p.kind} ${p.len}`,
+      name: "Moving average", group: "Trend", short: p => `${p.kind} ${p.len}`,
       defaults: { kind: "EMA", len: 20, color: "#2962ff", width: 2 },
-      schema: [{ key: "kind", label: "Typ", type: "select", str: true, options: [["SMA", "SMA (einfach)"], ["EMA", "EMA (exponentiell)"]] },
-               { key: "len", label: "Länge", type: "num", min: 1, max: 1000 }, { key: "color", label: "Farbe", type: "color", with: [{ key: "width", type: "select", options: [[1, "1px"], [2, "2px"], [3, "3px"], [4, "4px"]] }] }],
+      schema: [{ key: "kind", label: "Typ", type: "select", str: true, options: [["SMA", "SMA (simple)"], ["EMA", "EMA (exponential)"]] },
+               { key: "len", label: "Length", type: "num", min: 1, max: 1000 }, { key: "color", label: "Color", type: "color", with: [{ key: "width", type: "select", options: [[1, "1px"], [2, "2px"], [3, "3px"], [4, "4px"]] }] }],
       make: (S, st) => maStudy(S, st),
     },
     svp: {
-      name: "Volumenprofil (Session)", group: "Volumenprofil", short: p => `VP Session · ${{ rthon: "RTH + Nacht", rth: "RTH", eth: "ganze Session" }[p.split3]}`,
-      defaults: Object.assign({ split3: "eth", width: 42, minPx: 2, split: true, poc: "#f23645", pocW: 2, pocExtend: false, vaLines: false, vaLine: "#2962ff", onDim: true, numbers: "exact", numDelta: 0 }, VP_GREY),
-      schema: [{ key: "split3", label: "Aufteilung", type: "select", str: true, options: [["rthon", "RTH und Nacht getrennt"], ["rth", "nur RTH (09:30–16:00 NY)"], ["eth", "ganze Session (18:00–17:00)"]] },
-               { key: "width", label: "Breite (% der Session)", type: "num", min: 5, max: 100 }, { key: "minPx", label: "Zeilenhöhe min. (px)", type: "num", min: 1, max: 20 },
-               { key: "onDim", label: "Nacht abgeschwächt", type: "bool" }, { key: "pocExtend", label: "POC nach rechts verlängern", type: "bool" },
-               { key: "vaLines", label: "VAH / VAL als Linien", type: "bool", with: [{ key: "vaLine", type: "color" }]}].concat(NUMBERS_SCHEMA, COLOR_SCHEMA),
+      name: "Volume profile (session)", group: "Volume profile", short: p => `VP Session · ${{ rthon: "RTH + overnight", rth: "RTH", eth: "whole session" }[p.split3]}`,
+      defaults: Object.assign({ split3: "eth", width: 42, minPx: 2, split: true, poc: "#f23645", pocW: 2, pocExtend: false, vaLines: false, vaLine: "#2962ff", onDim: true, numbers: "exact", numDelta: 0, mirror: false, mirrorWidth: 25 }, VP_GREY),
+      schema: [{ key: "split3", label: "Split", type: "select", str: true, options: [["rthon", "RTH and overnight apart"], ["rth", "RTH only (09:30–16:00 NY)"], ["eth", "whole session (18:00–17:00)"]] },
+               { key: "width", label: "Width (% of the session)", type: "num", min: 5, max: 100 }, { key: "minPx", label: "Row height min. (px)", type: "num", min: 1, max: 20 },
+               { key: "mirror", label: "Mirror to the right (the newest session in view, at the chart's right edge)", type: "bool", with: [{ key: "mirrorWidth", type: "num", min: 5, max: 60 }] },
+               { key: "onDim", label: "Overnight dimmed", type: "bool" }, { key: "pocExtend", label: "Extend POC to the right", type: "bool" },
+               { key: "vaLines", label: "VAH / VAL as lines", type: "bool", with: [{ key: "vaLine", type: "color" }]}].concat(NUMBERS_SCHEMA, COLOR_SCHEMA),
       eth: p => p.split3 === "eth",
       make: (S, st) => svpStudy(S, st),
     },
     vrvp: {
-      name: "Volumenprofil (sichtbarer Bereich)", group: "Volumenprofil", short: () => "VRVP",
+      name: "Volume profile (visible range)", group: "Volume profile", short: () => "VRVP",
       defaults: Object.assign({ width: 28, rows: 0, side: "right", split: true, poc: "#f23645", pocW: 1, pocLine: true, numbers: "exact", numDelta: 0 }, VP_COLORS),
-      schema: [{ key: "rows", label: "Zeilen (0 = fein)", type: "num", min: 0, max: 400 }, { key: "width", label: "Breite (% des Charts)", type: "num", min: 5, max: 100 },
+      schema: [{ key: "rows", label: "Rows (0 = fine)", type: "num", min: 0, max: 400 }, { key: "width", label: "Width (% of the chart)", type: "num", min: 5, max: 100 },
                { key: "side", label: "Platzierung", type: "select", str: true, options: [["right", "rechts"], ["left", "links"]] },
-               { key: "pocLine", label: "POC über den Chart", type: "bool" }].concat(NUMBERS_SCHEMA, COLOR_SCHEMA),
+               { key: "pocLine", label: "POC across the chart", type: "bool" }].concat(NUMBERS_SCHEMA, COLOR_SCHEMA),
       make: (S, st) => vrvpStudy(S, st),
     },
     tpo: {
-      name: "Market Profile (TPO)", group: "Volumenprofil", short: () => "TPO RTH",
+      name: "Market Profile (TPO)", group: "Volume profile", short: () => "TPO RTH",
       defaults: { mode: "auto", width: 45, colors: "period", block: "#9c9ff2", vaHi: true, poc: "#f23645", vaLines: true, vaLine: "rgba(255,255,255,0.55)", ib: true, ibColor: "#ff9800", singles: true, tails: true, row: 4 },
-      schema: [{ key: "mode", label: "Darstellung", type: "select", str: true, options: [["auto", "Buchstaben, wenn Platz ist"], ["letters", "immer Buchstaben"], ["blocks", "Blöcke"]] },
-               { key: "width", label: "Breite (% der RTH)", type: "num", min: 10, max: 100 },
-               { key: "colors", label: "Farben", type: "select", str: true, options: [["period", "je Periode"], ["mono", "einfarbig"]], with: [{ key: "block", type: "color" }] },
-               { key: "vaHi", label: "Value Area hervorheben", type: "bool" }, { key: "poc", label: "POC", type: "color" },
-               { key: "vaLines", label: "VAH / VAL als Linien", type: "bool", with: [{ key: "vaLine", type: "color" }] },
-               { key: "ib", label: "Initial Balance markieren", type: "bool", with: [{ key: "ibColor", type: "color" }] },
+      schema: [{ key: "mode", label: "Darstellung", type: "select", str: true, options: [["auto", "Letters when there is room"], ["letters", "always letters"], ["blocks", "Blocks"]] },
+               { key: "width", label: "Width (% of the RTH)", type: "num", min: 10, max: 100 },
+               { key: "colors", label: "Colors", type: "select", str: true, options: [["period", "per period"], ["mono", "einfarbig"]], with: [{ key: "block", type: "color" }] },
+               { key: "vaHi", label: "Highlight the value area", type: "bool" }, { key: "poc", label: "POC", type: "color" },
+               { key: "vaLines", label: "VAH / VAL as lines", type: "bool", with: [{ key: "vaLine", type: "color" }] },
+               { key: "ib", label: "Mark the initial balance", type: "bool", with: [{ key: "ibColor", type: "color" }] },
                { key: "singles", label: "Single Prints (magenta)", type: "bool" }, { key: "tails", label: "Tails (orange)", type: "bool" }],
       p30: true,
       make: (S, st) => tpoStudy(S, st),
@@ -187,59 +188,60 @@
     vwap: {
       name: "VWAP", group: "Trend", short: p => `VWAP ${p.anchor === "eth" ? "Session" : "RTH"}`,
       defaults: { anchor: "rth", color: "#2962ff", width: 2, b1: true, b2: false, b3: false, m1: 1, m2: 2, m3: 3, bandColor: "#4caf50", fill: true, fillColor: "rgba(76,175,80,0.06)", label: true },
-      schema: [{ key: "anchor", label: "Anker", type: "select", str: true, options: [["rth", "RTH (ab 09:30 NY)"], ["eth", "Session (ab 18:00 NY)"]] },
+      schema: [{ key: "anchor", label: "Anker", type: "select", str: true, options: [["rth", "RTH (from 09:30 NY)"], ["eth", "Session (ab 18:00 NY)"]] },
                { key: "color", label: "VWAP", type: "color", with: [{ key: "width", type: "select", options: [[1, "1px"], [2, "2px"], [3, "3px"]] }] },
                { key: "b1", label: "Band 1 (× σ)", type: "bool", with: [{ key: "m1", type: "num", min: 0.1, max: 10, step: 0.1 }] },
                { key: "b2", label: "Band 2 (× σ)", type: "bool", with: [{ key: "m2", type: "num", min: 0.1, max: 10, step: 0.1 }] },
                { key: "b3", label: "Band 3 (× σ)", type: "bool", with: [{ key: "m3", type: "num", min: 0.1, max: 10, step: 0.1 }] },
-               { key: "bandColor", label: "Bänder", type: "color" }, { key: "fill", label: "Füllung Band 1", type: "bool", with: [{ key: "fillColor", type: "color" }] },
-               { key: "label", label: "Wert auf der Preisachse", type: "bool" }],
+               { key: "bandColor", label: "Bands", type: "color" }, { key: "fill", label: "Fill of band 1", type: "bool", with: [{ key: "fillColor", type: "color" }] },
+               { key: "label", label: "Value on the price axis", type: "bool" }],
       eth: p => p.anchor === "eth",
       make: (S, st) => vwapStudy(S, st),
     },
     prior: {
-      name: "Vortag VAH / VAL / POC", group: "Level", short: () => "Vortag",
+      name: "Prior day VAH / VAL / POC", group: "Level", short: () => "Prior day",
       defaults: { va: "#5b9cf6", poc: "#f23645", style: "solid", labels: true, extendAll: false },
       schema: [{ key: "va", label: "VAH / VAL", type: "color" }, { key: "poc", label: "POC", type: "color" },
-               { key: "style", label: "Linienart", type: "select", str: true, options: [["solid", "durchgezogen"], ["dashed", "gestrichelt"], ["dotted", "gepunktet"]] },
+               { key: "style", label: "Line style", type: "select", str: true, options: [["solid", "durchgezogen"], ["dashed", "gestrichelt"], ["dotted", "gepunktet"]] },
                { key: "labels", label: "Beschriftung", type: "bool" }],
       make: (S, st) => priorStudy(S, st),
     },
     npoc: {
       name: "Naked POCs", group: "Level", short: () => "nPOC",
       defaults: { color: "#fbc02d", style: "dashed", touched: true, labels: true },
-      schema: [{ key: "color", label: "Farbe", type: "color" }, { key: "style", label: "Linienart", type: "select", str: true, options: [["solid", "durchgezogen"], ["dashed", "gestrichelt"], ["dotted", "gepunktet"]] },
-               { key: "touched", label: "Gehandelte bis zum Treffer zeigen", type: "bool" }, { key: "labels", label: "Beschriftung", type: "bool" }],
+      schema: [{ key: "color", label: "Color", type: "color" }, { key: "style", label: "Line style", type: "select", str: true, options: [["solid", "durchgezogen"], ["dashed", "gestrichelt"], ["dotted", "gepunktet"]] },
+               { key: "touched", label: "Show traded ones up to the touch", type: "bool" }, { key: "labels", label: "Beschriftung", type: "bool" }],
       make: (S, st) => npocStudy(S, st),
     },
     ib: {
       name: "Initial Balance", group: "Level", short: () => "IB",
       defaults: { color: "#b2b5be", style: "dashed", ext: false, extColor: "#787b86", fill: false, fillColor: "rgba(255,152,0,0.06)" },
-      schema: [{ key: "color", label: "IBH / IBL", type: "color" }, { key: "style", label: "Linienart", type: "select", str: true, options: [["solid", "durchgezogen"], ["dashed", "gestrichelt"], ["dotted", "gepunktet"]] },
+      schema: [{ key: "color", label: "IBH / IBL", type: "color" }, { key: "style", label: "Line style", type: "select", str: true, options: [["solid", "durchgezogen"], ["dashed", "gestrichelt"], ["dotted", "gepunktet"]] },
                { key: "ext", label: "Extensions 1,5× / 2× / 3×", type: "bool", with: [{ key: "extColor", type: "color" }] },
-               { key: "fill", label: "IB-Bereich füllen", type: "bool", with: [{ key: "fillColor", type: "color" }] }],
+               { key: "fill", label: "Fill the IB range", type: "bool", with: [{ key: "fillColor", type: "color" }] }],
       make: (S, st) => ibStudy(S, st),
     },
     onhl: {
-      name: "Overnight Hoch / Tief", group: "Level", short: () => "ON H/L",
+      name: "Overnight high / low", group: "Level", short: () => "ON H/L",
       defaults: { color: "#9598a1", style: "dotted", poc: false, pocColor: "#ff9800" },
-      schema: [{ key: "color", label: "Farbe", type: "color" }, { key: "style", label: "Linienart", type: "select", str: true, options: [["solid", "durchgezogen"], ["dashed", "gestrichelt"], ["dotted", "gepunktet"]] },
+      schema: [{ key: "color", label: "Color", type: "color" }, { key: "style", label: "Line style", type: "select", str: true, options: [["solid", "durchgezogen"], ["dashed", "gestrichelt"], ["dotted", "gepunktet"]] },
                { key: "poc", label: "Overnight-POC", type: "bool", with: [{ key: "pocColor", type: "color" }] }],
       make: (S, st) => onStudy(S, st),
     },
     timer: {
-      name: "Bar-Timer (Countdown und Uhr)", group: "Werkzeug", short: () => "Bar-Timer",
+      name: "Bar timer (countdown and clock)", group: "Tool", short: () => "Bar-Timer",
       defaults: { corner: "br", size: 22, clock: true, color: "#d1d4dc", bg: "rgba(30,30,30,0.75)" },
-      schema: [{ key: "corner", label: "Ecke", type: "select", str: true, options: [["br", "unten rechts"], ["tr", "oben rechts"], ["bl", "unten links"]] },
-               { key: "size", label: "Schriftgröße", type: "num", min: 12, max: 60 }, { key: "clock", label: "Replay-Uhrzeit dazu", type: "bool" },
-               { key: "color", label: "Schrift", type: "color" }, { key: "bg", label: "Hintergrund", type: "color" }],
+      schema: [{ key: "corner", label: "Corner", type: "select", str: true, options: [["br", "bottom right"], ["tr", "top right"], ["bl", "bottom left"]] },
+               { key: "size", label: "Font size", type: "num", min: 12, max: 60 }, { key: "clock", label: "Replay time as well", type: "bool" },
+               { key: "color", label: "Font", type: "color" }, { key: "bg", label: "Background", type: "color" }],
       make: (S, st) => timerStudy(S, st),
     },
     week: {
-      name: "Wochenprofil", group: "Volumenprofil", short: () => "Woche",
-      defaults: { color: "rgba(41,98,255,0.16)", va: "rgba(41,98,255,0.34)", poc: "rgba(242,54,69,0.7)", width: 60 },
-      schema: [{ key: "va", label: "Value Area", type: "color" }, { key: "color", label: "Außerhalb", type: "color" }, { key: "poc", label: "POC", type: "color" },
-               { key: "width", label: "Breite (% der Woche)", type: "num", min: 10, max: 100 }],
+      name: "Weekly VP", group: "Volume profile", short: () => "Weekly VP",
+      defaults: { color: "rgba(41,98,255,0.16)", va: "rgba(41,98,255,0.34)", poc: "rgba(242,54,69,0.7)", width: 60, mirror: false, mirrorWidth: 25 },
+      schema: [{ key: "va", label: "Value Area", type: "color" }, { key: "color", label: "Outside", type: "color" }, { key: "poc", label: "POC", type: "color" },
+               { key: "width", label: "Width (% of the week)", type: "num", min: 10, max: 100 },
+               { key: "mirror", label: "Mirror to the right (the newest week in view)", type: "bool", with: [{ key: "mirrorWidth", type: "num", min: 5, max: 60 }] }],
       eth: () => true,
       make: (S, st) => weekStudy(S, st),
     },
@@ -260,7 +262,7 @@
             const xs = c.xOf(s.start);
             if (xs != null && xs > 0) {
               ctx.strokeStyle = "rgba(255,255,255,0.12)"; ctx.setLineDash([4, 4]); ctx.beginPath(); ctx.moveTo(Math.round(xs) + 0.5, 0); ctx.lineTo(Math.round(xs) + 0.5, h); ctx.stroke(); ctx.setLineDash([]);
-              if (xs - lastLab > 80) { lastLab = xs; ctx.font = font(11); ctx.fillStyle = "rgba(149,152,161,0.8)"; ctx.fillText(new Intl.DateTimeFormat("de-AT", { timeZone: "UTC", weekday: "short", day: "2-digit", month: "2-digit" }).format(new Date(s.date + "T12:00:00Z")).replace(".,", ""), xs + 5, h - 6); }
+              if (xs - lastLab > 80) { lastLab = xs; ctx.font = font(11); ctx.fillStyle = "rgba(149,152,161,0.8)"; ctx.fillText(new Intl.DateTimeFormat("en-GB", { timeZone: "UTC", weekday: "short", day: "2-digit", month: "2-digit" }).format(new Date(s.date + "T12:00:00Z")).replace(".,", ""), xs + 5, h - 6); }
             }
           }
         }
@@ -276,7 +278,7 @@
     let ma = null;
     const scale = () => c.chart.priceScale("vol").applyOptions({ scaleMargins: { top: 1 - p.height / 100, bottom: 0 }, visible: false });
     scale();
-    const pt = b => ({ time: b.t, value: b.v, color: b.c >= b.o ? p.up : p.down });
+    const pt = b => b.gap ? { time: b.t } : { time: b.t, value: b.v, color: b.c >= b.o ? p.up : p.down };
     const maData = () => { const B = c.BARS, out = []; let s = 0; for (let i = 0; i < B.length; i++) { s += B[i].v; if (i >= p.maLen) s -= B[i - p.maLen].v; if (i >= p.maLen - 1) out.push({ time: B[i].t, value: s / p.maLen }); } return out; };
     const all = () => { ser.setData(c.BARS.map(pt)); if (ma) ma.setData(maData()); };
     const setMa = () => { if (p.ma && !ma) ma = c.chart.addLineSeries({ priceScaleId: "vol", color: p.maColor, lineWidth: 1, priceLineVisible: false, lastValueVisible: false, crosshairMarkerVisible: false });
@@ -296,10 +298,12 @@
     const ser = c.chart.addLineSeries({ color: p.color, lineWidth: p.width, priceLineVisible: false, lastValueVisible: true, crosshairMarkerVisible: false });
     let vals = [];
     const calc = () => {
-      const B = c.BARS, n = p.len, out = []; vals = new Array(B.length).fill(null);
-      if (p.kind === "SMA") { let s = 0; for (let i = 0; i < B.length; i++) { s += B[i].c; if (i >= n) s -= B[i - n].c; if (i >= n - 1) { vals[i] = s / n; out.push({ time: B[i].t, value: vals[i] }); } } }
-      else { const k = 2 / (n + 1); let e = null, s = 0; for (let i = 0; i < B.length; i++) { if (i < n) { s += B[i].c; if (i === n - 1) e = s / n; } else e = B[i].c * k + e * (1 - k); if (e != null) { vals[i] = e; out.push({ time: B[i].t, value: e }); } } }
-      ser.setData(out);
+      const all = c.BARS, n = p.len, out = []; vals = new Array(all.length).fill(null);
+      const idx = []; for (let i = 0; i < all.length; i++) if (!all[i].gap) idx.push(i); else out.push({ time: all[i].t });   // gap slots stay empty
+      const B = idx.map(i => all[i]), at = j => idx[j];
+      if (p.kind === "SMA") { let s = 0; for (let i = 0; i < B.length; i++) { s += B[i].c; if (i >= n) s -= B[i - n].c; if (i >= n - 1) { vals[at(i)] = s / n; out.push({ time: B[i].t, value: vals[at(i)] }); } } }
+      else { const k = 2 / (n + 1); let e = null, s = 0; for (let i = 0; i < B.length; i++) { if (i < n) { s += B[i].c; if (i === n - 1) e = s / n; } else e = B[i].c * k + e * (1 - k); if (e != null) { vals[at(i)] = e; out.push({ time: B[i].t, value: e }); } } }
+      out.sort((a, b) => a.time - b.time); ser.setData(out);
     };
     calc();
     return {
@@ -316,8 +320,10 @@
     const draw = pass => (ctx, w, h) => {
         if (!st.on || c.cfg.type === "tpo") return;
         const vr = c.visibleT(); if (!vr) return;
+        let newest = null;
         for (const s of A.list()) {
           if (s.end < vr[0] || s.start > vr[1]) continue;
+          newest = s;
           const parts = p.split3 === "eth" ? [[s.eth, 1]] : p.split3 === "rth" ? [[s.rth, 1]] : [[s.on, p.onDim ? 0.6 : 1], [s.rth, 1]];
           for (const [part, dim] of parts) {
             if (!part || !part.vp) continue;
@@ -332,11 +338,25 @@
             if (p.vaLines) { line(ctx, x0, x1, c.yOf(part.vp.vah + tk), p.vaLine, [4, 3]); line(ctx, x0, x1, c.yOf(part.vp.val), p.vaLine, [4, 3]); }
           }
         }
+        // the mirror: the newest session in view, its profile growing from the chart's right edge leftwards - so a
+        // low timeframe that has scrolled the session's start off the left still shows the session's profile
+        if (p.mirror && newest) {
+          const parts = p.split3 === "eth" ? [[newest.eth, 1]] : p.split3 === "rth" ? [[newest.rth, 1]] : [[newest.on, p.onDim ? 0.6 : 1], [newest.rth, 1]];
+          for (const [part, dim] of parts) {
+            if (!part || !part.vp) continue;
+            ctx.save(); ctx.globalAlpha = dim;
+            paintVp(c, ctx, part.vp, w, w * (p.mirrorWidth || 25) / 100, -1, p, p.minPx, pass);
+            ctx.restore();
+            if (pass === "numbers") continue;
+            const tk = TICK();
+            line(ctx, w - w * (p.mirrorWidth || 25) / 100, w, c.yOf(part.vp.poc + tk / 2), TV.rgba(p.poc, TV.alphaOf(p.poc) * dim), [], p.pocW);
+          }
+        }
     };
     const layer = c.addLayer("bottom", { draw: draw("bars") }), layer2 = c.addLayer("normal", { draw: draw("numbers") });
     return { destroy() { c.removeLayer(layer); c.removeLayer(layer2); },
              vals() { const s = A.cur || A.list().slice(-1)[0]; const part = s && (p.split3 === "eth" ? s.eth : s.rth || (p.split3 === "rthon" ? s.on : null));
-                      return part && part.vp ? [{ text: "POC " + TV.fp(part.vp.poc, c.tick()), color: p.poc }, { text: `Zeile ${st._g || 1} Tick${(st._g || 1) > 1 ? "s" : ""}`, color: "var(--muted)" }] : []; } };
+                      return part && part.vp ? [{ text: "POC " + TV.fp(part.vp.poc, c.tick()), color: p.poc }, { text: `Row ${st._g || 1} tick${(st._g || 1) > 1 ? "s" : ""}`, color: "var(--muted)" }] : []; } };
   }
   // ---------------------------------------------------------------- visible range volume profile
   function vrvpStudy(S, st) {
@@ -619,7 +639,7 @@
         if (!st.on) return;
         const B = c.BARS, now = RC.now(); if (!B.length || now == null) return;
         const b = B[B.length - 1], rem = Math.max(0, b.t + c.tfSec() - now);
-        const lines = [TV.clock(rem)]; if (p.clock) lines.push(RC.fmtTime(now, true) + (RC.tz() === "NY" ? " NY" : " Wien"));
+        const lines = [TV.clock(rem)]; if (p.clock) lines.push(RC.fmtTime(now, true) + (RC.tz() === "NY" ? " NY" : " Vienna"));
         ctx.font = `600 ${p.size}px ` + getComputedStyle(document.body).getPropertyValue("--font");
         const tw = Math.max(...lines.map(x => ctx.measureText(x).width)), lh = p.size * 1.25, bw = tw + 24, bh = lh * lines.length + 14;
         const x = p.corner.endsWith("l") ? 12 : w - bw - 12, y = p.corner.startsWith("t") ? 56 : h - bh - 12;
@@ -647,6 +667,7 @@
           for (const pt of parts) if (pt && pt.vp) for (const [pr, v] of pt.vp.levels) wk.vol.set(pr, (wk.vol.get(pr) || 0) + v);
           weeks.set(k, wk);
         }
+        let newest = null;
         for (const wk of weeks.values()) {
           if (!wk.vol.size) continue;
           const x0 = c.xOf(wk.start), x1 = c.xOf(Math.min(wk.end, c.lastT)); if (x0 == null || x1 == null || x1 < 0 || x0 > w || x1 - x0 < 20) continue;
@@ -657,6 +678,12 @@
           const vp = { levels: rows.map(r => [r[0], r[1], 0]), poc: rows[pi][0], val: rows[lo][0], vah: rows[hi][0] };
           paintVp(c, ctx, vp, x0, (x1 - x0) * p.width / 100, 1, { split: false, up: p.color, vaUp: p.va }, 2);
           line(ctx, x0, x1, c.yOf(vp.poc + tk / 2), p.poc, [], 1);
+          if (!newest || wk.start > newest.wk.start) newest = { wk, vp };
+        }
+        if (p.mirror && newest) {                               // the newest week in view, from the chart's right edge leftwards
+          const mw = w * (p.mirrorWidth || 25) / 100;
+          paintVp(c, ctx, newest.vp, w, mw, -1, { split: false, up: p.color, vaUp: p.va }, 2);
+          line(ctx, w - mw, w, c.yOf(newest.vp.poc + tk / 2), p.poc, [], 1);
         }
       },
     });
@@ -710,12 +737,12 @@
       const render = () => { dlg.body.replaceChildren(); TV.form(dlg.body, def.schema, s.p, () => this.changed(s)); };
       const dlg = TV.dialog({ title: def.name, width: 500,
         body: b => TV.form(b, def.schema, s.p, () => this.changed(s)),
-        buttons: [{ label: "Werkseinstellung", action: () => { s.p = Object.assign({}, def.defaults); this.changed(s); render(); return false; } },
-                  { label: "Als Standard speichern", action: () => {                  // for every new one, and every pane's now
+        buttons: [{ label: "Factory setting", action: () => { s.p = Object.assign({}, def.defaults); this.changed(s); render(); return false; } },
+                  { label: "Save as default", action: () => {                  // for every new one, and every pane's now
                       TV.store.set("study.defaults." + s.type, Object.assign({}, s.p));
                       for (const c of TV.app.charts) for (const x of c.studies.list) if (x.type === s.type && x !== s) { x.p = Object.assign({}, s.p); c.studies.changed(x); }
-                      TV.toast(`${def.name}: als Standard gespeichert und in allen Charts übernommen`, "ok"); return false; } },
-                  { label: "Abbrechen", action: () => { s.p = JSON.parse(before); this.changed(s); } }, { label: "OK", kind: "pri" }] });
+                      TV.toast(`${def.name}: saved as default and applied to all charts`, "ok"); return false; } },
+                  { label: "Cancel", action: () => { s.p = JSON.parse(before); this.changed(s); } }, { label: "OK", kind: "pri" }] });
     }
     legend(host) {
       this.rows = new Map();
@@ -726,7 +753,7 @@
           el("span.nm", { text: def.short(s.p) }), vals,
           el("span.btns", null,
             el("button.lg-btn", { title: s.on ? "Ausblenden" : "Einblenden", onclick: () => this.toggle(s) }, TV.iconSm(s.on ? "eye" : "eyeoff")),
-            el("button.lg-btn", { title: "Einstellungen", onclick: () => this.settings(s) }, TV.iconSm("gear")),
+            el("button.lg-btn", { title: "Settings", onclick: () => this.settings(s) }, TV.iconSm("gear")),
             el("button.lg-btn", { title: "Entfernen", onclick: () => this.remove(s.id) }, TV.iconSm("close")))));
         row.querySelector(".lg-study").addEventListener("dblclick", () => this.settings(s));
         host.append(row); this.rows.set(s.id, vals);
@@ -747,7 +774,7 @@
   // TradingView's indicator dialog
   TV.indicatorDialog = function (chart) {
     const types = Object.keys(DEFS);
-    TV.dialog({ title: "Indikatoren", width: 560, pad: false, body: b => {
+    TV.dialog({ title: "Indicators", width: 560, pad: false, body: b => {
       const inp = el("input", { placeholder: "Suchen", autocomplete: "off" }), list = el("div.slist");
       b.append(el("div.search", { style: { paddingTop: "8px" } }, TV.iconSm("search", 20), inp), list);
       let hl = 0, shown = [];
@@ -758,14 +785,14 @@
           const d = DEFS[t]; if (q && !(d.name + " " + d.group).toLowerCase().includes(q)) continue;
           if (d.group !== g) { g = d.group; list.append(el("div.grp", { text: g })); }
           const have = chart.studies.list.filter(s => s.type === t).length;
-          const row = el("div.si" + (shown.length === hl ? ".hl" : ""), { onclick: () => { chart.studies.add(t); TV.toast(`${d.name} hinzugefügt`, "ok", 1800); render(); } },
+          const row = el("div.si" + (shown.length === hl ? ".hl" : ""), { onclick: () => { chart.studies.add(t); TV.toast(`${d.name} added`, "ok", 1800); render(); } },
             el("span.sd", { text: d.name }), el("span.sx", { text: have ? `${have}× im Chart` : "" }));
           list.append(row); shown.push(t);
         }
-        if (!shown.length) list.append(el("div.empty", { text: "Nichts gefunden" }));
+        if (!shown.length) list.append(el("div.empty", { text: "Nothing found" }));
       };
       inp.oninput = () => { hl = 0; render(); };
-      inp.onkeydown = e => { if (e.key === "ArrowDown") { hl = Math.min(shown.length - 1, hl + 1); render(); e.preventDefault(); } else if (e.key === "ArrowUp") { hl = Math.max(0, hl - 1); render(); e.preventDefault(); } else if (e.key === "Enter" && shown[hl]) { chart.studies.add(shown[hl]); TV.toast(`${DEFS[shown[hl]].name} hinzugefügt`, "ok", 1800); render(); } };
+      inp.onkeydown = e => { if (e.key === "ArrowDown") { hl = Math.min(shown.length - 1, hl + 1); render(); e.preventDefault(); } else if (e.key === "ArrowUp") { hl = Math.max(0, hl - 1); render(); e.preventDefault(); } else if (e.key === "Enter" && shown[hl]) { chart.studies.add(shown[hl]); TV.toast(`${DEFS[shown[hl]].name} added`, "ok", 1800); render(); } };
       render(); setTimeout(() => inp.focus(), 0);
     } });
   };

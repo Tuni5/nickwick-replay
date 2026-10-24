@@ -38,16 +38,15 @@ import time
 
 import numpy as np
 
-POINT_VALUE = {"ES": 50.0, "MES": 5.0, "NQ": 20.0, "MNQ": 2.0, "YM": 5.0, "MYM": 0.5, "RTY": 50.0, "M2K": 5.0,
-               "CL": 1000.0, "MCL": 100.0, "GC": 100.0, "MGC": 10.0}
-TICK_SIZE = {"ES": 0.25, "MES": 0.25, "NQ": 0.25, "MNQ": 0.25, "YM": 1.0, "MYM": 1.0, "RTY": 0.1, "M2K": 0.1,
-             "CL": 0.01, "MCL": 0.01, "GC": 0.1, "MGC": 0.1}
+import specs as _specs
+
 TYPES = ("market", "limit", "stop")
 
 
 def specs(root):
-    """(tick size, dollars per point) of a symbol"""
-    return TICK_SIZE.get(root, 0.25), POINT_VALUE.get(root, 50.0)
+    """(tick size, dollars per point) of a symbol (specs.py)"""
+    sp = _specs.spec(root)
+    return sp[0], sp[1]
 
 
 class Prints:
@@ -244,8 +243,7 @@ class Book:
         self._acts = {}
 
     def _path(self, account):
-        safe = "".join(ch if ch.isalnum() or ch in "@-_.#" else "_" for ch in account)
-        return os.path.join(self.folder, f"{safe}.json")
+        return os.path.join(self.folder, f"{self._safe(account)}.json")
 
     def actions(self, account):
         if account not in self._acts:
@@ -257,8 +255,13 @@ class Book:
         return self._acts[account]
 
     def add(self, account, action):
-        """append an action at its moment; actions later than it are dropped (a new branch). Returns how many."""
+        """append an action at its moment; actions later than it are dropped (a new branch). Returns how many.
+        Two windows' clocks differ by their latency: an action that lands less than two seconds behind the last one
+        is a later action with a slightly early stamp, not a jump back - it goes after the last one."""
         acts = self.actions(account)
+        last = max((a["t"] for a in acts), default=None)
+        if last is not None and action["t"] < last < action["t"] + 2:
+            action["t"] = last + 0.001
         keep = [a for a in acts if a["t"] <= action["t"]]
         dropped = len(acts) - len(keep)
         action["seq"] = max((a.get("seq", 0) for a in keep), default=0) + 1
@@ -270,6 +273,33 @@ class Book:
     def reset(self, account):
         self._acts[account] = []
         self._save(account)
+
+    def names(self, prefix=""):
+        """the accounts on disk whose name starts with prefix"""
+        try:
+            files = os.listdir(self.folder)
+        except OSError:
+            return []
+        out = []
+        for f in files:
+            if f.endswith(".json") and f.startswith(self._safe(prefix)):
+                out.append(f[:-5])
+        return sorted(out)
+
+    def drop(self, prefix):
+        """delete every account whose name starts with prefix (Close Replay); returns how many"""
+        n = 0
+        for name in self.names(prefix):
+            self._acts.pop(name, None)
+            try:
+                os.remove(os.path.join(self.folder, name + ".json")); n += 1
+            except OSError:
+                pass
+        return n
+
+    @staticmethod
+    def _safe(name):
+        return "".join(ch if ch.isalnum() or ch in "@-_.#" else "_" for ch in name)
 
     def _save(self, account):
         os.makedirs(self.folder, exist_ok=True)

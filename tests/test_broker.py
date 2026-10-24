@@ -111,3 +111,13 @@ def test_tenths_of_a_contract_behave_like_micros():
     st = B.compute(acts, TAPE, 10)
     assert st["pos"] == 0 and st["trades"][1]["qty"] == 0.2 and st["trades"][1]["exit"] == 101.50
     assert st["realized_usd"] == round(((100.00 - 100.25) * 0.1 + (101.50 - 100.25) * 0.2) * 50, 2)
+
+
+def test_two_windows_clocks_a_moment_apart_do_not_branch(tmp_path):
+    """window A books at 5.0, window B (its clock 0.3 s behind) at 4.7: B's action goes after A's, nothing is dropped"""
+    book = B.Book(str(tmp_path))
+    book.add("x", order(5.0, +1, "market", oid="a"))
+    assert book.add("x", {"op": "bracket", "t": 4.7, "sl": 99.0}) == 0
+    acts = book.actions("x")
+    assert [a["op"] for a in acts] == ["order", "bracket"] and acts[1]["t"] > acts[0]["t"]
+    assert book.add("x", order(2.0, -1, "market", oid="b")) == 2                   # a real jump back still branches

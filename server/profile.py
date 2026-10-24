@@ -17,13 +17,13 @@ import numpy as np
 
 import session
 import timeline as TL
-from archive import TICK
+import specs
 
 CACHE = 400
 _CACHE = {}                                       # (root, td, row, eth, stamp) -> a finished session's answer
 
 
-def _vp(p, v, buy, sell):
+def _vp(p, v, buy, sell, TICK):
     """level rows (price in ticks, volume, buy, sell) -> {levels: [[price, volume, delta]], poc, vah, val, total}"""
     if p.size == 0:
         return None
@@ -31,7 +31,7 @@ def _vp(p, v, buy, sell):
     sv = np.bincount(p - pmin, v)
     sd = np.bincount(p - pmin, buy) - np.bincount(p - pmin, sell)
     idx = np.flatnonzero(sv > 0)
-    levels = [[round((int(i) + pmin) * TICK, 2), int(round(sv[i])), int(round(sd[i]))] for i in idx]
+    levels = [[round((int(i) + pmin) * TICK, 7), int(round(sv[i])), int(round(sd[i]))] for i in idx]
     return {"levels": levels, **TL.value_area(levels)}
 
 
@@ -46,7 +46,7 @@ def _minutes(day, t0, t1, until, forming):
     return t, h, l, c, o
 
 
-def tpo(t, h, l, start, row):
+def tpo(t, h, l, start, row, TICK=0.25):
     """TPO counts per row of `row` ticks (a row named by its lowest price), periods of 30 minutes from `start`:
     POC, value area (70 % of the TPOs), singles (runs of rows one period touched, inside the range), tails (such
     runs at the top or bottom, two rows or more)"""
@@ -62,7 +62,7 @@ def tpo(t, h, l, start, row):
         for r in per[k]:
             count[r] = count.get(r, 0) + 1
     rows = sorted(count)
-    levels = [[round(r * rp, 2), count[r]] for r in rows]
+    levels = [[round(r * rp, 7), count[r]] for r in rows]
     va = TL.value_area(levels)
     runs = []
     for r in rows:
@@ -85,7 +85,7 @@ def tpo(t, h, l, start, row):
             "singles": singles, "tails": tails}
 
 
-def vwap(rows):
+def vwap(rows, TICK=0.25):
     """level rows (minute t, price in ticks, volume, ...) -> [[minute t, vwap, sd], ...]: the volume-weighted average
     price from the first minute on, per minute, and the volume-weighted standard deviation around it"""
     mt, p, v = rows[0], rows[1], rows[2]
@@ -100,7 +100,7 @@ def vwap(rows):
     for i, t in enumerate(um.tolist()):
         if cv[i] > 0:
             m = cpv[i] / cv[i]
-            out.append([int(t), round(float(m), 2), round(float(np.sqrt(max(0.0, cp2v[i] / cv[i] - m * m))), 3)])
+            out.append([int(t), round(float(m), 7), round(float(np.sqrt(max(0.0, cp2v[i] / cv[i] - m * m))), 7)])
     return out
 
 
@@ -113,7 +113,7 @@ def _part(tl, root, day, t0, t1, until, forming):
         return None
     rows = tl._rows(root, t0, t1, until)
     return {"start": t0, "end": t1, "developing": until is not None and until < t1,
-            "open": o[0], "high": max(h), "low": min(l), "close": c[-1], "vp": _vp(*rows[1:])}
+            "open": o[0], "high": max(h), "low": min(l), "close": c[-1], "vp": _vp(*rows[1:], specs.tick_of(root))}
 
 
 def session_set(tl, root, td, until=None, row=4, eth=False):
@@ -141,16 +141,16 @@ def session_set(tl, root, td, until=None, row=4, eth=False):
     rth = _part(tl, root, day, r0, r1, until, forming)
     if rth is not None:
         t, h, l, c, o = _minutes(day, r0, r1, until, forming)
-        rth["tpo"] = tpo(t, h, l, r0, row)
+        rth["tpo"] = tpo(t, h, l, r0, row, specs.tick_of(root))
         ib = [(hi, lo) for ti, hi, lo in zip(t, h, l) if ti < r0 + 3600]
         rth["ib"] = {"high": max(x[0] for x in ib), "low": min(x[1] for x in ib), "end": r0 + 3600,
                      "complete": until is None or until >= r0 + 3600} if ib else None
-        rth["vwap"] = vwap(tl._rows(root, r0, r1, until))
+        rth["vwap"] = vwap(tl._rows(root, r0, r1, until), specs.tick_of(root))
     out["rth"] = rth
     if eth:
         out["eth"] = _part(tl, root, day, start, end, until, forming)
         if out["eth"] is not None:
-            out["eth"]["vwap"] = vwap(tl._rows(root, start, end, until))
+            out["eth"]["vwap"] = vwap(tl._rows(root, start, end, until), specs.tick_of(root))
     if finished and not is_live:
         _CACHE[key] = out
         while len(_CACHE) > CACHE:

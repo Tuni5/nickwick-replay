@@ -6,14 +6,14 @@
  * time axes like TradingView. Layers: chart.layers.bottom / normal / top, each {draw(ctx, w, h), axis(), time()}. */
 (function () {
   const { el } = TV;
-  TV.TFS = [[5 / 60, "5s", "5 Sekunden"], [15 / 60, "15s", "15 Sekunden"], [30 / 60, "30s", "30 Sekunden"], [1, "1m", "1 Minute"], [2, "2m", "2 Minuten"], [3, "3m", "3 Minuten"], [5, "5m", "5 Minuten"], [10, "10m", "10 Minuten"],
-            [15, "15m", "15 Minuten"], [30, "30m", "30 Minuten"], [45, "45m", "45 Minuten"], [60, "1h", "1 Stunde"], [120, "2h", "2 Stunden"],
-            [240, "4h", "4 Stunden"], [1440, "D", "1 Tag (Session)"]];
+  TV.TFS = [[5 / 60, "5s", "5 seconds"], [15 / 60, "15s", "15 seconds"], [30 / 60, "30s", "30 seconds"], [1, "1m", "1 minute"], [2, "2m", "2 minutes"], [3, "3m", "3 minutes"], [5, "5m", "5 minutes"], [10, "10m", "10 minutes"],
+            [15, "15m", "15 minutes"], [30, "30m", "30 minutes"], [45, "45m", "45 minutes"], [60, "1h", "1 hour"], [120, "2h", "2 hours"],
+            [240, "4h", "4 hours"], [1440, "D", "1 day (session)"]];
   TV.tfName = tf => (TV.TFS.find(x => x[0] === tf) || [0, tf + "m"])[1];
   TV.tfShort = tf => tf < 1 ? Math.round(tf * 60) + "s" : tf < 60 ? String(tf) : tf < 1440 ? tf / 60 + "h" : "1D";
   const VIEWN = tf => ({ 1: 240, 2: 220, 3: 200, 5: 200, 10: 170, 15: 150, 30: 120, 45: 110, 60: 110, 120: 100, 240: 90, 1440: 40 })[tf] || 150;
-  TV.CHART_TYPES = [["candles", "Kerzen", "candles"], ["hollow", "Hohle Kerzen", "hollow"], ["bars", "Bars (OHLC)", "bars"], ["heikin", "Heikin Ashi", "heikin"],
-                    ["line", "Linie", "line"], ["area", "Fläche", "area"], ["footprint", "Footprint (Bid × Ask)", "footprint"], ["tpo", "Market Profile (TPO-Chart)", "tpo"]];
+  TV.CHART_TYPES = [["candles", "Candles", "candles"], ["hollow", "Hollow candles", "hollow"], ["bars", "Bars (OHLC)", "bars"], ["heikin", "Heikin Ashi", "heikin"],
+                    ["line", "Line", "line"], ["area", "Area", "area"], ["footprint", "Footprint (Bid × Ask)", "footprint"], ["tpo", "Market Profile (TPO chart)", "tpo"]];
 
   // ---- the series primitive that carries a chart's layers (one per z-order)
   class Prim {
@@ -34,10 +34,10 @@
 
   // ---- time labels in the display's zone (New York or Vienna, clock.js)
   const fmts = {};
-  const zf = opts => { const k = RC.zone() + JSON.stringify(opts); return fmts[k] || (fmts[k] = new Intl.DateTimeFormat("de-AT", Object.assign({ timeZone: RC.zone() }, opts))); };
+  const zf = opts => { const k = RC.zone() + JSON.stringify(opts); return fmts[k] || (fmts[k] = new Intl.DateTimeFormat("en-GB", Object.assign({ timeZone: RC.zone() }, opts))); };
   const parts = (f, t) => f.formatToParts(new Date(t * 1000)).reduce((a, x) => (a[x.type] = x.value, a), {});
   TV.fmtCross = (t, tf) => {
-    if (tf >= 1440) { const p = parts(new Intl.DateTimeFormat("de-AT", { timeZone: "UTC", weekday: "short", day: "2-digit", month: "short", year: "2-digit" }), Date.parse(RC.tradeDate(t + 1) + "T12:00:00Z") / 1000);
+    if (tf >= 1440) { const p = parts(new Intl.DateTimeFormat("en-GB", { timeZone: "UTC", weekday: "short", day: "2-digit", month: "short", year: "2-digit" }), Date.parse(RC.tradeDate(t + 1) + "T12:00:00Z") / 1000);
       return `${p.weekday.replace(".", "")} ${p.day} ${p.month.replace(".", "")} '${p.year}`; }
     const p = parts(zf({ weekday: "short", day: "2-digit", month: "short", year: "2-digit", hour: "2-digit", minute: "2-digit", second: "2-digit", hourCycle: "h23" }), t);
     return `${p.weekday.replace(".", "")} ${p.day} ${p.month.replace(".", "")} '${p.year}   ${p.hour}:${p.minute}${tf < 1 ? ":" + p.second : ""}`;
@@ -50,7 +50,7 @@
       this.box = el("div.cbox"); this.el.append(this.box);
       this.legendEl = el("div.legend"); this.el.append(this.legendEl);
       this.msgEl = el("div.msg"); this.el.append(this.msgEl);
-      this.plusEl = el("div.plus", { text: "+", title: "Order oder Linie bei diesem Preis" }); this.el.append(this.plusEl);
+      this.plusEl = el("div.plus", { text: "+", title: "Order or line at this price" }); this.el.append(this.plusEl);
       this.layers = { bottom: [], normal: [], top: [] };
       this.prims = ["bottom", "normal", "top"].map(z => new Prim(this, z));
       this.BARS = []; this.SESS = []; this.inst = null; this.from = null; this.lastT = null; this.needT = null; this.needFrom = null;
@@ -79,7 +79,7 @@
         rightPriceScale: { borderVisible: false, scaleMargins: { top: 0.12, bottom: 0.14 }, entireTextOnly: true },
         timeScale: { borderVisible: true, borderColor: v("--line"), timeVisible: true, secondsVisible: this.cfg.tf < 1, rightOffset: 12, barSpacing: 7,
                      minBarSpacing: 0.4, tickMarkFormatter: (t, k) => this.tickFmt(t, k) },
-        localization: { locale: "de-AT", timeFormatter: t => TV.fmtCross(t, this.cfg.tf), priceFormatter: p => TV.fp(p, this.tick()) },
+        localization: { locale: "en-GB", timeFormatter: t => TV.fmtCross(t, this.cfg.tf), priceFormatter: p => TV.fp(p, this.tick()) },
         crosshair: { mode: LightweightCharts.CrosshairMode.Normal,
                      vertLine: { color: "#9598a1", width: 1, style: LightweightCharts.LineStyle.LargeDashed, labelBackgroundColor: v("--line2") },
                      horzLine: { color: "#9598a1", width: 1, style: LightweightCharts.LineStyle.LargeDashed, labelBackgroundColor: v("--line2") } },
@@ -134,18 +134,19 @@
       if (this.cfg.type === "tpo" && tf !== 30) this.cfg.type = "candles", this.makeSeries(false);
       this.cfg.tf = tf; this.chart.applyOptions({ timeScale: { secondsVisible: tf < 1 } }); this.app.saveLayout(); this.app.topState(); this.legend(); this.reset();
     }
-    display(bars) {                                             // bars -> what the series takes
+    display(bars) {                                             // bars -> what the series takes; a gap slot (a missing day) is whitespace
       const type = this.cfg.type;
-      if (type === "line" || type === "area") return bars.map(b => ({ time: b.t, value: b.c }));
+      if (type === "line" || type === "area") return bars.map(b => b.gap ? { time: b.t } : { time: b.t, value: b.c });
       if (type === "heikin") {
         const out = []; let po = null, pc = null;
         for (const b of bars) {
+          if (b.gap) { out.push({ time: b.t }); continue; }
           const c = (b.o + b.h + b.l + b.c) / 4, o = po == null ? (b.o + b.c) / 2 : (po + pc) / 2;
           out.push({ time: b.t, open: o, high: Math.max(b.h, o, c), low: Math.min(b.l, o, c), close: c }); po = o; pc = c;
         }
         return out;
       }
-      return bars.map(b => ({ time: b.t, open: b.o, high: b.h, low: b.l, close: b.c }));
+      return bars.map(b => b.gap ? { time: b.t } : { time: b.t, open: b.o, high: b.h, low: b.l, close: b.c });
     }
     pushTail(k, fresh, oldLen) {
       // only the last bar changed or bars were appended: update in place (no flicker). Replacing the last bar with
@@ -176,15 +177,15 @@
       const inst = this.app.inst();
       try {
         if (inst !== this.inst) { this.inst = inst; this.SESS = []; this.BARS = []; this.from = null; }
-        if (!this.SESS.length && t != null) { this.busy = true; this.SESS = await RP.sessions(inst); this.busy = false; if (!this.SESS.length) { this.msg = "Keine Handelstage im Archiv – Ordner in den Einstellungen prüfen"; this.needT = null; return; } }
+        if (!this.SESS.length && t != null) { this.busy = true; this.SESS = await RP.sessions(inst); this.busy = false; if (!this.SESS.length) { this.msg = "No trading days in the archive – check the folders in the settings"; this.needT = null; return; } }
         else if (t != null && Date.now() - (this._sessAt || 0) > 60000) { this._sessAt = Date.now(); RP.sessions(inst).then(l => { if (l.length) this.SESS = l; }).catch(() => {}); }
         if (t != null && this.lastT != null && t === this.lastT && this.needT === t) this.needT = null;
         if (this.needT != null) { this.busy = true; const x = this.needT; this.needT = null; await this.tail(x); return; }
         if (this.needFrom != null && this.from != null && this.needFrom < this.from && this.lastT != null) { this.busy = true; const f = this.needFrom; this.needFrom = null; await this.older(f); }
-        this.fails = 0; if (this.msg.startsWith("Fehler")) this.msg = "";
+        this.fails = 0; if (this.msg.startsWith("Error")) this.msg = "";
       } catch (e) {
         this.fails = (this.fails || 0) + 1;                  // a request that failed: the next step tries again, the message only after three
-        if (this.fails >= 3) this.msg = "Fehler: " + e.message + (e.message === "Failed to fetch" ? " – der Server antwortet nicht (neu gestartet? Konsolenfenster prüfen)" : "");
+        if (this.fails >= 3) this.msg = "Error: " + e.message + (e.message === "Failed to fetch" ? " – the server does not answer (restarted? check the console window)" : "");
         if (t != null && this.needT == null) this.needT = t;
         await new Promise(r => setTimeout(r, 400));
       }
@@ -192,10 +193,12 @@
     }
     async reload(t) {
       const i = Math.max(0, this.sessIdx(t)), from = Math.max(0, i - this.sessionsPerStep() + 1), tf = this.cfg.tf;
-      this.msg = "Lade Kerzen …";
+      this.msg = "Loading candles …";
       const bars = await this.getBars(this.SESS[from].start, t + 1, t);
       if (tf !== this.cfg.tf) return;
-      this.BARS = bars; this.from = from; this.series.setData(this.display(bars)); this.lastT = t; this.msg = bars.length ? "" : "Keine Daten bis zu dieser Zeit";
+      this.BARS = bars; this.from = from; this.series.setData(this.display(bars)); this.lastT = t;
+      if (!bars.length) { const nxt = this.SESS.find(s => s.start > t); this.msg = `${this.inst}: no data up to this time` + (nxt ? ` – first trading day after: ${nxt.date}` : ""); }
+      else this.msg = "";
       const n = bars.length;
       if (this.cfg.type === "footprint" && TV.FP) TV.FP.zoomIn(this);
       else this.chart.timeScale().setVisibleLogicalRange({ from: n - VIEWN(tf), to: n + 12 });
@@ -292,7 +295,8 @@
     }
     yOf(p) { return this.series ? this.series.priceToCoordinate(p) : null; }
     pOfY(y) { return this.series ? this.series.coordinateToPrice(y) : null; }
-    barAtX(x) { const t = this.tOfX(x); if (t == null) return null; const i = this.idxOf(t); return i >= 0 && t < this.BARS[i].t + this.tfSec() ? this.BARS[i] : null; }
+    barAtX(x) { const t = this.tOfX(x); if (t == null) return null; const i = this.idxOf(t); const b = i >= 0 && t < this.BARS[i].t + this.tfSec() ? this.BARS[i] : null; return b && !b.gap ? b : null; }
+    lastBar() { const B = this.BARS; for (let i = B.length - 1; i >= 0; i--) if (!B[i].gap) return B[i]; return null; }
     pane() { return { w: this.chart.timeScale().width(), h: this.box.clientHeight - this.chart.timeScale().height() }; }
     visibleT() {                                                // [t from, t to] of the bars in view
       const r = this.chart.timeScale().getVisibleLogicalRange(), B = this.BARS; if (!r || !B.length) return null;
@@ -327,15 +331,16 @@
       this.ohlcEl = el("span.lg-ohlc"); title.append(this.ohlcEl);
       L.classList.toggle("folded", !!this.cfg.legendFolded);
       L.append(title);
-      // the indicator rows fold behind a chevron under the title, as TradingView: folded, the count stays
+      // the indicator rows fold behind a chevron, as TradingView: folded, it sits under the title with the count;
+      // unfolded, it sits under the last indicator row
       const n = (this.cfg.studies || []).length, folded = !!this.cfg.legendFolded;
-      const fold = el("button.lg-fold", { title: folded ? "Indikatoren einblenden" : "Indikatoren ausblenden", onclick: () => { this.cfg.legendFolded = !this.cfg.legendFolded; this.app.saveLayout(); this.legend(); } },
-        TV.iconSm("down", 16), folded ? el("span", { text: String(n) }) : null);
-      if (folded) fold.firstChild.style.transform = "rotate(-90deg)";
-      L.append(fold);
-      if (TV.Trade && this.app.settings.qt) { const q = TV.Trade.quickBox(this); if (q) L.insertBefore(q, fold); }
-      this.studyRows = el("div", { style: { display: "flex", flexDirection: "column", gap: "1px" } });
-      L.append(this.studyRows);
+      const fold = el("button.lg-fold", { title: folded ? "Show indicators" : "Hide indicators", onclick: () => { this.cfg.legendFolded = !this.cfg.legendFolded; this.app.saveLayout(); this.legend(); } },
+        TV.iconSm(folded ? "right" : "up", 18), folded ? el("span", { text: `${n} indicator${n === 1 ? "" : "s"}` }) : null);
+      this._foldBtn = fold;
+      if (TV.Trade && this.app.settings.qt) { const q = TV.Trade.quickBox(this); if (q) L.append(q); }
+      this.studyRows = el("div", { style: { display: folded ? "none" : "flex", flexDirection: "column", gap: "1px" } });
+      if (folded) L.append(this._foldBtn, this.studyRows);     // folded: right under the quick box, with the count
+      else L.append(this.studyRows, this._foldBtn);            // open: under the last indicator row
       if (TV.FP) { const r = TV.FP.legendRow(this); if (r) this.studyRows.append(r); }
       this.studies.legend(this.studyRows);
       this.legendValues();
@@ -345,6 +350,7 @@
       let i = B.length - 1;
       if (this.cross && this.cross.t != null) i = this.idxOf(this.cross.t);
       const b = B[i]; this.ohlcEl.replaceChildren();
+      if (b && b.gap) { this.ohlcEl.append(el("span", null, el("b", { text: "NO DATA · " + b.day, style: { color: "var(--down)", fontWeight: 500 } }))); for (const s of this.studies.list) s.row && s.row.vals && s.row.vals([]); return; }
       if (b) {
         const prev = i > 0 ? B[i - 1].c : b.o, ch = b.c - prev, col = b.c >= b.o ? "var(--up)" : "var(--down)", tk = this.tick();
         const v = (k, x) => el("span", null, el("i", { text: k }), el("b", { text: TV.fp(x, tk), style: { color: col, fontWeight: 400 } }));
@@ -422,7 +428,7 @@
       new ResizeObserver(() => this.redraw()).observe(this.box);
     }
     setCross(c) {                                               // the crosshair of another pane, at its time and price
-      if (!c || c.t == null || !this.BARS.length) { this._syncing = true; this.chart.clearCrosshairPosition(); this._syncing = false; return; }
+      if (!c || c.t == null || !this.BARS.length) { this._syncing = true; this.chart.clearCrosshairPosition(); this._syncing = false; if (!this.crossOwn) { this.cross = null; this.legendValues(); } return; }
       const i = this.idxOf(c.t); if (i < 0) return;
       this._syncing = true;
       try { this.chart.setCrosshairPosition(c.p != null ? c.p : this.BARS[i].c, this.BARS[i].t, this.series); } catch (e) {}

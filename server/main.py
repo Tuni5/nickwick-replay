@@ -15,6 +15,8 @@ replay clock and the simulated broker, and serves the page.
   GET  /feeds                   the live feeds
   GET  /health                  "ok"
   POST /ingest                  from the Rithmic Bridge (live.py)
+  GET/POST /api/sessions        named sessions with their journal and statistics (sessions.py)
+  GET/POST /api/workspaces      workspaces: a chart layout and the drawings per instrument (workspaces.py)
   GET/POST /api/...             settings, inventory, data checks, the clock, the broker, snapshots - every POST needs
                                 X-Replay-Token, a random value of this run written only into the pages the server
                                 serves; every /api request must name this server as Host (no DNS rebinding). With
@@ -39,8 +41,11 @@ import clock
 import live
 import profile as prof
 import session
+import sessions as sess
 import settings
+import specs
 import timeline
+import workspaces
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 WEB = os.path.join(os.path.dirname(HERE), "web")
@@ -51,6 +56,8 @@ ACCOUNT = re.compile(r"^([A-Za-z0-9]+)\.1m@(\d{4}-\d{2}-\d{2})$")          # an 
 
 FEEDS = live.Feeds(os.path.join(LOGS, "prints"), os.path.join(LOGS, "live"))
 BOOK = broker.Book(os.path.join(LOGS, "broker"))
+SESSIONS = None                                                             # sessions.Sessions, after prints_of exists
+WORKSPACES = workspaces.Workspaces(os.path.join(LOGS, "workspaces"))
 STATE = {"archive": None, "tl": None, "eff": None}
 _PRINTS = {}                                                                 # (root, td, stamp) -> Prints of an archive day
 
@@ -105,20 +112,63 @@ def prints_of(account):
     return pr, archive.root_of(f["instrument"]), float(pr.t[0]), float(pr.t[-1]), True
 
 
+def session_totals(replay, root, book):
+    """what the replay's other days booked (the account of a replay spans its days: fills per day, realised P/L and
+    the trades summed over the days)"""
+    realized, trades = 0.0, []
+    for name in BOOK.names(f"{replay}#"):
+        if name == book:
+            continue
+        m = ACCOUNT.match(name.split("#", 1)[1])
+        if not m or m.group(1) != root:
+            continue
+        try:
+            pr, *_ = prints_of(m.group(0))
+        except ValueError:
+            continue
+        st = broker.compute(BOOK.actions(name), pr, float(pr.t[-1]) + 1, root)
+        realized += st["realized_usd"]; trades.extend(st["trades"])
+    return realized, trades
+
+
 def broker_call(method, op, body, q):
     account = str(body.get("feed") or q.get("feed") or "")
+    replay = str(body.get("session") or q.get("session") or "")                 # the replay running (clock.py): r… loose, s… a session
+    if op == "close":                                                          # Close Replay: a loose replay's accounts go, a session's stay
+        if not re.fullmatch(r"[rs][0-9a-f]{6,20}", replay):
+            raise ValueError("session: the replay's id")
+        return {"session": replay, "dropped": BOOK.drop(f"{replay}#") if replay.startswith("r") else 0}
     pr, root, start, end, is_live = prints_of(account)
     tick, _ = broker.specs(root)
-    book = f"{account}#{session.trade_date(time.time())}" if is_live else account
+    td_live = session.trade_date(time.time())
+    book = (f"{replay}#{account}#{td_live}" if replay else f"{account}#{td_live}") if is_live else (f"{replay}#{account}" if replay else account)
+    if replay.startswith("s") and method == "POST" and op != "reset":          # a session's window: its start, its end
+        sx = SESSIONS.get(replay)
+        if sx is None:
+            raise ValueError("the session no longer exists")
+        tt = time.time() if is_live else float(body.get("t") or 0)
+        if tt < sx["start"] - 1 or (sx["end"] and tt > session.bounds(sx["end"])[1]):
+            raise ValueError("outside the session: it runs from its start" + (f" to the end of {sx['end']}" if sx["end"] else ""))
     if method == "GET" and op == "state":
         until = time.time() if is_live else min(float(q.get("until") or end), end)
-        st = broker.compute(BOOK.actions(book), pr, until, root)
-        return {"feed": account, "root": root, "live": is_live, **st}
+        acts = BOOK.actions(book)
+        st = broker.compute(acts, pr, until, root)
+        out = {"feed": account, "root": root, "live": is_live, "session": replay, **st,
+               "actions": [a for a in acts if a["t"] <= until]}                  # every move, for the trade's trace
+        if replay:
+            realized, trades = session_totals(replay, root, book)
+            out["session_realized_usd"] = round(realized + st["realized_usd"], 2)
+            out["session_trades"] = sorted(trades + st["trades"], key=lambda x: x["t_in"])
+            if replay.startswith("s"):
+                sx = SESSIONS.get(replay)
+                if sx:
+                    out["session_name"], out["session_balance"] = sx["name"], sx["balance"]
+        return out
     if method != "POST":
         raise KeyError("not found")
     if op == "reset":
         BOOK.reset(book)
-        return {"feed": account, "root": root, "live": is_live, **broker.compute([], pr, time.time() if is_live else end, root), "reset": True}
+        return {"feed": account, "root": root, "live": is_live, "session": replay, **broker.compute([], pr, time.time() if is_live else end, root), "reset": True}
     t = time.time() if is_live else float(body.get("t"))
     if not is_live and not start - 3600 <= t <= end:
         raise ValueError("t: the replay's time on that day")
@@ -152,7 +202,7 @@ def broker_call(method, op, body, q):
         raise KeyError("not found")
     dropped = BOOK.add(book, act)
     st = broker.compute(BOOK.actions(book), pr, t, root)
-    return {"feed": account, "root": root, "live": is_live, **st, "dropped": dropped}
+    return {"feed": account, "root": root, "live": is_live, "session": replay, **st, "dropped": dropped}
 
 
 # ---------------------------------------------------------------- settings, inventory, checks
@@ -188,8 +238,11 @@ def inventory():
         sd, td = a.second_dir(root), a.tick_dir(root)
         secs = {f[:10] for f in os.listdir(sd) if f.endswith("_1s.csv")} if os.path.isdir(sd) else set()
         ticks = {f[:10] for f in os.listdir(td) if f.endswith("_ticks.csv")} if os.path.isdir(td) else set()
+        a.day(root, days[-1])
+        sp = specs.spec(root)
         rows.append({"name": root, "days": len(days), "first": days[0], "last": days[-1], "missing": _missing(days),
-                     "with_seconds": sum(d in secs for d in days), "with_ticks": sum(d in ticks for d in days)})
+                     "with_seconds": sum(d in secs for d in days), "with_ticks": sum(d in ticks for d in days),
+                     "tick": sp[0], "pv": sp[1], "spec": "Tabelle" if root in specs.SPECS else "aus den Daten"})
     size = 0
     for dp, _, fs in os.walk(a.base):
         size += sum(os.path.getsize(os.path.join(dp, f)) for f in fs)
@@ -302,8 +355,16 @@ class H(BaseHTTPRequestHandler):
         else:
             raise ValueError("tf: 1 to 1440 minutes, or 5, 15, 30 seconds as 1/12, 1/4, 1/2")
         if route == "/tl/sessions":
-            return self._json({"inst": inst, "instruments": tl().roots(),
-                               "sessions": [{"date": d, "start": session.bounds(d)[0], "end": session.bounds(d)[1]} for d in tl().sessions(inst)]})
+            days = tl().sessions(inst)
+            if days:
+                STATE["archive"].day(inst, days[-1])                                 # learns an unknown symbol's tick
+            sp = specs.spec(inst)
+            a = STATE["archive"]
+            secs = set(os.listdir(a.second_dir(inst))) if os.path.isdir(a.second_dir(inst)) else set()
+            tks = set(os.listdir(a.tick_dir(inst))) if os.path.isdir(a.tick_dir(inst)) else set()
+            return self._json({"inst": inst, "instruments": tl().roots(), "tick": sp[0], "pv": sp[1], "name": sp[2], "specs": specs.known(),
+                               "sessions": [{"date": d, "start": session.bounds(d)[0], "end": session.bounds(d)[1],
+                                             "seconds": f"{d}_1s.csv" in secs, "ticks": f"{d}_ticks.csv" in tks} for d in days]})
         if route == "/tl/bars":
             return self._json({"inst": inst, "tf": tf, "until": until, "bars": tl().bars(inst, tf, t0, t1, until)})
         if route == "/tl/levels":
@@ -345,6 +406,8 @@ class H(BaseHTTPRequestHandler):
         try:
             if route == "/api/clock":
                 return self._json(clock.snapshot() if method == "GET" else clock.change(body))
+            if method == "POST" and route == "/api/cross":                       # one window's cursor for the others
+                return self._json(clock.cross(body))
             if route.startswith("/api/broker/"):
                 return self._json(broker_call(method, route[len("/api/broker/"):], body, q))
             if method == "POST" and route == "/api/screenshot":
@@ -366,6 +429,47 @@ class H(BaseHTTPRequestHandler):
                         os.makedirs(p, exist_ok=True); made.append(p)
                 apply_settings()
                 return self._json({"created": made})
+            if route == "/api/workspaces":
+                if method == "GET":
+                    wid, inst = q.get("id"), q.get("inst")
+                    if wid and inst:
+                        return self._json(WORKSPACES.drawings(wid, inst))
+                    if wid:
+                        return self._json(WORKSPACES.get(wid))
+                    return self._json({"workspaces": WORKSPACES.list()})
+                op = str(body.get("op") or "")
+                wid = str(body.get("id") or "")
+                if op == "create":
+                    return self._json(WORKSPACES.create(body.get("name"), body.get("layout"), body.get("drawings")))
+                if op == "rename":
+                    return self._json(WORKSPACES.rename(wid, body.get("name")))
+                if op == "duplicate":
+                    return self._json(WORKSPACES.duplicate(wid, body.get("name")))
+                if op == "delete":
+                    return self._json(WORKSPACES.delete(wid))
+                if op == "layout":
+                    return self._json(WORKSPACES.set_layout(wid, body.get("layout")))
+                if op == "drawings":
+                    out = WORKSPACES.merge(wid, str(body.get("inst") or ""), body.get("list"), body.get("deleted") or {})
+                    clock.notify({"ws": {"id": wid, "inst": out["inst"], "origin": str(body.get("origin") or "")[:16]}})
+                    return self._json(out)
+                raise ValueError("op: create, rename, duplicate, delete, layout or drawings")
+            if route == "/api/sessions":
+                if method == "GET":
+                    sid = q.get("id")
+                    return self._json(SESSIONS.stats(sid) if sid else {"sessions": SESSIONS.list()})
+                op = str(body.get("op") or "")
+                if op == "create":
+                    return self._json(SESSIONS.create(body))
+                if op == "update":
+                    return self._json(SESSIONS.update(str(body.get("id") or ""), body))
+                if op == "delete":
+                    return self._json(SESSIONS.delete(str(body.get("id") or "")))
+                if op == "trade":
+                    return self._json(SESSIONS.journal_trade(str(body.get("id") or ""), str(body.get("trade") or ""), body))
+                if op == "day":
+                    return self._json(SESSIONS.journal_day(str(body.get("id") or ""), str(body.get("day") or ""), body))
+                raise ValueError("op: create, update, delete, trade or day")
             if method == "GET" and route == "/api/inventory":
                 return self._json(inventory())
             if method == "GET" and route == "/api/check":
@@ -421,6 +525,9 @@ def lan_addresses():
     except OSError:
         pass
     return sorted(a for a in out if not a.startswith("127."))
+
+
+SESSIONS = sess.Sessions(os.path.join(LOGS, "sessions"), BOOK, prints_of)
 
 
 def make_server(port):

@@ -84,8 +84,8 @@ body.ticket-open #ticket { display: block; }
 .lg-study:hover .btns { display: inline-flex; }
 .lg-btn { width: 22px; height: 20px; border: 0; background: none; border-radius: 3px; display: inline-flex; align-items: center; justify-content: center; color: var(--text2); cursor: pointer; padding: 0; }
 .lg-btn:hover { background: var(--hover); color: var(--text); }
-.lg-fold { pointer-events: auto; height: 18px; border: 0; background: none; color: var(--muted); cursor: pointer; display: inline-flex; align-items: center; gap: 3px; padding: 0 2px; border-radius: 3px; width: max-content; font-size: 12px; }
-.lg-fold:hover { background: var(--hover); color: var(--text); }
+.lg-fold { pointer-events: auto; height: 22px; border: 1px solid var(--line2); background: var(--surface); color: var(--text2); cursor: pointer; display: inline-flex; align-items: center; gap: 3px; padding: 0 8px 0 3px; border-radius: 11px; width: max-content; font-size: 11px; margin-top: 2px; }
+.lg-fold:hover { background: var(--hover); color: var(--text); border-color: var(--text2); }
 .legend.folded .lg-study { display: none; }
 .qt { display: flex; align-items: stretch; height: 34px; pointer-events: auto; margin: 3px 0 2px; user-select: none; }
 .qt button { border: 1px solid; background: color-mix(in srgb, var(--bg) 82%, transparent); cursor: pointer; padding: 0 8px; display: flex; flex-direction: column; justify-content: center; min-width: 74px; font-variant-numeric: tabular-nums; }
@@ -120,6 +120,7 @@ body.ticket-open #ticket { display: block; }
 #replay .rb { height: 30px; min-width: 30px; border: 0; background: none; border-radius: 4px; display: inline-flex; align-items: center; justify-content: center; cursor: pointer; padding: 0 7px; gap: 5px; color: var(--text); white-space: nowrap; }
 #replay .rb:hover { background: var(--hover); }
 #replay .rb.on { color: var(--blue); }
+#replay .rb.running { color: var(--text); }            /* play and pause both white */
 #replay .rb.play { width: 34px; }
 #replay .rb.live.on { color: var(--down); }
 #replay .rgrip { cursor: grab; color: var(--muted); padding: 0 3px; display: flex; align-items: center; height: 30px; }
@@ -289,3 +290,46 @@ table.grid .x:hover { color: var(--text); }
 .kbd { display: grid; grid-template-columns: 1fr auto; gap: 6px 20px; font-size: 13px; }
 .kbd span:nth-child(2n) { color: var(--muted); font-variant-numeric: tabular-nums; text-align: right; }
 @media (prefers-reduced-motion: reduce) { * { transition: none !important; } }
+
+/* ---- the journal (journal.js) */
+#journal { position: absolute; inset: 0; z-index: 70; background: var(--bg); display: flex; flex-direction: column; }
+#journal.hidden { display: none; }
+.jhead { display: flex; align-items: center; gap: 10px; padding: 8px 14px; border-bottom: 1px solid var(--line); }
+.jhead b { font-size: 15px; }
+.jsel { height: 30px; background: var(--panel); border: 1px solid var(--line2); border-radius: 4px; color: var(--text); max-width: 420px; }
+.jtab { height: 30px; padding: 0 12px; border: 0; border-radius: 6px; background: none; color: var(--text2); cursor: pointer; }
+.jtab.on { background: var(--hover); color: var(--text); }
+.jbody { flex: 1; overflow: auto; padding: 14px 16px; }
+.jempty { color: var(--muted); padding: 30px; text-align: center; }
+.jsub { font-size: 12px; color: var(--muted); margin: 14px 0 6px; }
+.jrow { display: flex; gap: 8px; align-items: center; margin: 10px 0; }
+.jtiles { display: grid; grid-template-columns: repeat(6, minmax(120px, 1fr)); gap: 8px; }
+.jtile { background: var(--panel); border: 1px solid var(--line); border-radius: 6px; padding: 10px 12px; display: flex; flex-direction: column; gap: 4px; }
+.jtile small { color: var(--muted); font-size: 11px; } .jtile b { font-size: 16px; font-weight: 500; }
+.jequity { width: 100%; max-width: 1100px; height: 180px; background: var(--panel); border: 1px solid var(--line); border-radius: 6px; }
+.jcharts { display: grid; grid-template-columns: repeat(auto-fill, minmax(320px, 1fr)); gap: 16px; margin-top: 8px; }
+.jbars { background: var(--panel); border: 1px solid var(--line); border-radius: 6px; padding: 4px 12px 10px; }
+.jbar { display: grid; grid-template-columns: 90px 1fr 150px; gap: 8px; align-items: center; font-size: 12px; height: 22px; }
+.jbar .jl { color: var(--text2); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.jbar .jb { height: 10px; background: var(--bg); border-radius: 3px; overflow: hidden; } .jbar .jb span { display: block; height: 100%; }
+.jbar .jb .up { background: var(--up); } .jbar .jb .dn { background: var(--down); } .jbar .jb .flat { background: var(--line2); }
+.jbar .jv { text-align: right; font-variant-numeric: tabular-nums; }
+.jcal { display: grid; grid-template-columns: repeat(7, 1fr); gap: 6px; max-width: 1100px; }
+.jwd { color: var(--muted); font-size: 12px; text-align: center; }
+.jday { min-height: 78px; border: 1px solid var(--line); border-radius: 6px; padding: 6px 8px; background: var(--panel); display: flex; flex-direction: column; gap: 2px; cursor: pointer; }
+.jday.pad { visibility: hidden; } .jday .jn { color: var(--muted); font-size: 12px; } .jday b { font-size: 14px; font-weight: 500; } .jday small { color: var(--text2); font-size: 11px; }
+.jday.up { background: rgba(8,153,129,0.18); border-color: rgba(8,153,129,0.5); } .jday.dn { background: rgba(242,54,69,0.16); border-color: rgba(242,54,69,0.5); } .jday.flat { background: var(--hover); }
+.jday.noted .jn::after { content: " ✎"; }
+.jday:hover { border-color: var(--text2); }
+.jtrades td, .jtrades th { white-space: nowrap; }
+.jtrade { display: grid; grid-template-columns: 200px 1fr; gap: 0; }
+.jfacts { padding: 12px 14px; border-right: 1px solid var(--line); display: flex; flex-direction: column; gap: 10px; }
+.jfacts small { color: var(--muted); font-size: 11px; display: block; } .jfacts b { font-weight: 500; }
+.jnotes { padding: 6px 14px 14px; }
+.jchips { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
+.jchip { display: inline-flex; align-items: center; gap: 4px; background: var(--hover); border: 1px solid var(--line2); border-radius: 12px; padding: 2px 6px 2px 10px; font-size: 12px; }
+.jchip button { border: 0; background: none; color: var(--muted); cursor: pointer; font-size: 14px; line-height: 1; }
+.jchips input { height: 26px; min-width: 120px; background: var(--bg); border: 1px solid var(--line2); border-radius: 4px; padding: 0 8px; color: var(--text); }
+.jstars button { border: 0; background: none; color: var(--muted); font-size: 20px; cursor: pointer; padding: 0 2px; } .jstars button.on { color: #f7b500; }
+.jnote { width: 100%; min-height: 90px; background: var(--bg); border: 1px solid var(--line2); border-radius: 4px; color: var(--text); padding: 8px; font: inherit; resize: vertical; }
+.jsess { max-width: 640px; }

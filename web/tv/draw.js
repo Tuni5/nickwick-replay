@@ -4,7 +4,8 @@
  * fixed range volume profile, the ruler (Shift + drag). Click a drawing to select it: handles, moving, the floating
  * style bar (colour, fill, width, style, text, settings, lock, delete); double-click for its settings; right-click for
  * its menu. Points are {t, p} - time and price - so a drawing stands in every timeframe and every pane at once.
- * Kept per instrument in the browser (localStorage "tv.draw.v1.<inst>"); other windows follow (BroadcastChannel).
+ * Kept per workspace and instrument on the server (workspace.js, server/workspaces.py); other windows follow
+ * through the clock's stream.
  * Undo / redo: Ctrl+Z / Ctrl+Y. A horizontal line can carry an alarm: when the replay crosses it, the clock pauses. */
 (function () {
   const { el } = TV;
@@ -14,29 +15,29 @@
                [0.786, "#00bcd4", true], [1, "#787b86", true], [1.618, "#2962ff", false], [2.618, "#f23645", false], [-0.272, "#9c27b0", false]];
   const LINE = { color: "#2962ff", width: 2, style: "solid", extendL: false, extendR: false, text: "", textColor: "#2962ff" };
   const T = TV.DRAW_TOOLS = {
-    trend: { name: "Trendlinie", icon: "trend", key: "Alt+T", n: 2, def: Object.assign({}, LINE) },
-    ray: { name: "Strahl", icon: "ray", n: 2, as: "trend", def: Object.assign({}, LINE, { extendR: true }) },
-    extended: { name: "Erweiterte Linie", icon: "extended", n: 2, as: "trend", def: Object.assign({}, LINE, { extendL: true, extendR: true }) },
-    hline: { name: "Horizontale Linie", icon: "hline", key: "Alt+H", n: 1, def: { color: "#2962ff", width: 1, style: "solid", showPrice: true, text: "", textColor: "#2962ff", alert: false } },
-    hray: { name: "Horizontaler Strahl", icon: "hray", key: "Alt+J", n: 1, def: { color: "#2962ff", width: 1, style: "solid", showPrice: true, text: "", textColor: "#2962ff", alert: false } },
-    vline: { name: "Vertikale Linie", icon: "vline", key: "Alt+V", n: 1, def: { color: "#2962ff", width: 1, style: "solid", showTime: true } },
-    crossline: { name: "Kreuzlinie", icon: "crossline", key: "Alt+C", n: 1, def: { color: "#2962ff", width: 1, style: "solid", showPrice: true, showTime: true } },
-    channel: { name: "Paralleler Kanal", icon: "channel", n: 3, def: { color: "#2962ff", width: 1, style: "solid", fill: true, fillColor: "rgba(41,98,255,0.12)", mid: true, extendL: false, extendR: false } },
-    arrowline: { name: "Pfeil", icon: "arrowline", n: 2, def: { color: "#2962ff", width: 2, style: "solid" } },
-    fib: { name: "Fib Retracement", icon: "fib", key: "Alt+F", n: 2, def: { color: "#787b86", width: 1, style: "solid", fill: true, labels: true, extendR: false, levels: FIB.map(x => ({ v: x[0], color: x[1], on: x[2] })) } },
-    rect: { name: "Rechteck", icon: "rect", key: "Alt+Shift+R", n: 2, def: { color: "#9c27b0", width: 1, style: "solid", fill: true, fillColor: "rgba(156,39,176,0.2)", extendR: false, text: "", textColor: "#d1d4dc" } },
-    brush: { name: "Pinsel", icon: "brush", n: "free", def: { color: "#2962ff", width: 2, style: "solid" } },
-    highlighter: { name: "Textmarker", icon: "highlighter", n: "free", def: { color: "rgba(255,235,59,0.38)", width: 14, style: "solid" } },
+    trend: { name: "Trend line", icon: "trend", key: "Alt+T", n: 2, def: Object.assign({}, LINE) },
+    ray: { name: "Ray", icon: "ray", n: 2, as: "trend", def: Object.assign({}, LINE, { extendR: true }) },
+    extended: { name: "Extended line", icon: "extended", n: 2, as: "trend", def: Object.assign({}, LINE, { extendL: true, extendR: true }) },
+    hline: { name: "Horizontal line", icon: "hline", key: "Alt+H", n: 1, def: { color: "#2962ff", width: 1, style: "solid", showPrice: true, text: "", textColor: "#2962ff", alert: false } },
+    hray: { name: "Horizontal ray", icon: "hray", key: "Alt+J", n: 1, def: { color: "#2962ff", width: 1, style: "solid", showPrice: true, text: "", textColor: "#2962ff", alert: false } },
+    vline: { name: "Vertical line", icon: "vline", key: "Alt+V", n: 1, def: { color: "#2962ff", width: 1, style: "solid", showTime: true } },
+    crossline: { name: "Cross line", icon: "crossline", key: "Alt+C", n: 1, def: { color: "#2962ff", width: 1, style: "solid", showPrice: true, showTime: true } },
+    channel: { name: "Parallel channel", icon: "channel", n: 3, def: { color: "#2962ff", width: 1, style: "solid", fill: true, fillColor: "rgba(41,98,255,0.12)", mid: true, extendL: false, extendR: false } },
+    arrowline: { name: "Arrow", icon: "arrowline", n: 2, def: { color: "#2962ff", width: 2, style: "solid" } },
+    fib: { name: "Fib retracement", icon: "fib", key: "Alt+F", n: 2, def: { color: "#787b86", width: 1, style: "solid", fill: true, labels: true, extendR: false, levels: FIB.map(x => ({ v: x[0], color: x[1], on: x[2] })) } },
+    rect: { name: "Rectangle", icon: "rect", key: "Alt+Shift+R", n: 2, def: { color: "#9c27b0", width: 1, style: "solid", fill: true, fillColor: "rgba(156,39,176,0.2)", extendR: false, text: "", textColor: "#d1d4dc" } },
+    brush: { name: "Brush", icon: "brush", n: "free", def: { color: "#2962ff", width: 2, style: "solid" } },
+    highlighter: { name: "Highlighter", icon: "highlighter", n: "free", def: { color: "rgba(255,235,59,0.38)", width: 14, style: "solid" } },
     text: { name: "Text", icon: "text", n: 1, def: { text: "", textColor: "#2962ff", fontSize: 14, bold: false, bg: false, fillColor: "rgba(41,98,255,0.15)" } },
-    note: { name: "Notiz", icon: "note", n: 2, def: { text: "", textColor: "#ffffff", fontSize: 13, color: "#2962ff", fillColor: "rgba(41,98,255,0.9)" } },
+    note: { name: "Note", icon: "note", n: 2, def: { text: "", textColor: "#ffffff", fontSize: 13, color: "#2962ff", fillColor: "rgba(41,98,255,0.9)" } },
     pricelabel: { name: "Preisbeschriftung", icon: "pricelabel", n: 1, def: { color: "#2962ff", textColor: "#ffffff", fontSize: 12 } },
-    long: { name: "Long-Position", icon: "long", n: "pos", def: { qty: 1, up: "rgba(8,153,129,0.22)", down: "rgba(242,54,69,0.22)", labels: true } },
-    short: { name: "Short-Position", icon: "short", n: "pos", def: { qty: 1, up: "rgba(8,153,129,0.22)", down: "rgba(242,54,69,0.22)", labels: true } },
+    long: { name: "Long position", icon: "long", n: "pos", def: { qty: 1, up: "rgba(8,153,129,0.22)", down: "rgba(242,54,69,0.22)", labels: true } },
+    short: { name: "Short position", icon: "short", n: "pos", def: { qty: 1, up: "rgba(8,153,129,0.22)", down: "rgba(242,54,69,0.22)", labels: true } },
     pricerange: { name: "Preisspanne", icon: "pricerange", n: 2, def: { color: "#2962ff", fillColor: "rgba(41,98,255,0.15)" } },
-    daterange: { name: "Datumsbereich", icon: "daterange", n: 2, def: { color: "#2962ff", fillColor: "rgba(41,98,255,0.15)" } },
-    datepricerange: { name: "Datums- und Preisbereich", icon: "datepricerange", n: 2, def: { color: "#2962ff", fillColor: "rgba(41,98,255,0.15)" } },
-    frvp: { name: "Volumenprofil (fester Bereich)", icon: "frvp", n: 2, def: { width: 40, split: true, up: "rgba(41,98,255,0.30)", down: "rgba(251,192,45,0.30)", vaUp: "rgba(41,98,255,0.72)", vaDown: "rgba(251,192,45,0.72)", poc: "#f23645", pocExtend: false, box: true, color: "#2962ff", numbers: "exact", numDelta: 0 } },
-    measure: { name: "Lineal (Shift + Ziehen)", icon: "ruler", n: 2, temp: true, def: {} },
+    daterange: { name: "Date range", icon: "daterange", n: 2, def: { color: "#2962ff", fillColor: "rgba(41,98,255,0.15)" } },
+    datepricerange: { name: "Date and price range", icon: "datepricerange", n: 2, def: { color: "#2962ff", fillColor: "rgba(41,98,255,0.15)" } },
+    frvp: { name: "Volume profile (fixed range)", icon: "frvp", n: 2, def: { width: 40, split: true, up: "rgba(41,98,255,0.30)", down: "rgba(251,192,45,0.30)", vaUp: "rgba(41,98,255,0.72)", vaDown: "rgba(251,192,45,0.72)", poc: "#f23645", pocExtend: false, box: true, color: "#2962ff", numbers: "exact", numDelta: 0 } },
+    measure: { name: "Ruler (Shift + drag)", icon: "ruler", n: 2, temp: true, def: {} },
   };
   const GROUPS = [
     { id: "cursor", tools: ["cross", "dot", "arrow", "eraser"] },
@@ -46,21 +47,20 @@
     { id: "text", tools: ["text", "note", "pricelabel"] },
     { id: "forecast", tools: ["long", "short", "pricerange", "daterange", "datepricerange", "frvp"] },
   ];
-  const CURSORS = { cross: ["Kreuz", "cross"], dot: ["Punkt", "dot"], arrow: ["Pfeil", "arrow"], eraser: ["Radierer", "eraser"] };
+  const CURSORS = { cross: ["Cross", "cross"], dot: ["Dot", "dot"], arrow: ["Arrow", "arrow"], eraser: ["Eraser", "eraser"] };
   const nameOf = t => T[t] ? T[t].name : CURSORS[t] ? CURSORS[t][0] : t;
   const iconOf = t => T[t] ? T[t].icon : CURSORS[t] ? CURSORS[t][1] : "cross";
 
   const D = TV.Draw = { tool: null, cursor: TV.store.get("draw.cursor", "cross"), magnet: TV.store.get("draw.magnet", "off"), stay: false,
                         lockAll: false, hidden: false, list: [], sel: null, make: null, drag: null, hover: null, undo: [], redo: [], inst: null,
                         last: TV.store.get("draw.last", {}), measure: null };
-  const ch = ("BroadcastChannel" in window) ? new BroadcastChannel("tv-draw") : null;
-  const key = () => "draw.v1." + (D.inst || "ES"), delKey = () => "draw.del." + (D.inst || "ES");
-  // Several windows share the drawings of an instrument through localStorage. Each window keeps what it last saw of
-  // every drawing (its JSON); saving stamps changed drawings with the time (u), remembers deleted ids with the time,
-  // merges with what is in storage (newer stamp wins, a deletion beats an older stamp) and writes the merge - so two
+  // the drawings live in the workspace on the server (workspace.js, server/workspaces.py)
+  // Several windows share the drawings of a workspace through the server. Each window keeps what it last saw of
+  // every drawing (its JSON); saving stamps changed drawings with the time (u), sends deleted ids with the time,
+  // and the server merges (newer stamp wins, a deletion beats an older stamp) and tells the other windows - so two
   // windows never overwrite each other's work, whichever saves last.
   let seen = new Map();
-  const dels = () => { const d = TV.store.get(delKey(), {}), cut = Date.now() - 86400000; for (const k in d) if (d[k] < cut) delete d[k]; return d; };
+  const dels = () => known;
   function merge(local, remote, deleted) {
     const out = new Map();
     for (const r of remote) out.set(r.id, r);
@@ -68,32 +68,57 @@
     for (const id of Object.keys(deleted)) { const d = out.get(id); if (d && (d.u || 0) <= deleted[id]) out.delete(id); }
     return [...out.values()];
   }
-  D.load = function (inst) { D.inst = inst; D.list = TV.store.get(key(), []); seen = new Map(D.list.map(d => [d.id, JSON.stringify(strip(d))])); D.sel = null; D.undo = []; D.redo = []; TV.app && TV.app.redrawAll(); D.styleBar(); };
+  let loadSeq = 0;
+  D.load = function (inst) {
+    D.inst = inst; D.list = []; seen = new Map(); D.sel = null; D.undo = []; D.redo = []; known = {};
+    const my = ++loadSeq, ws = TV.WS && TV.WS.cur;
+    if (!ws) return;
+    TV.getJSON(`/api/workspaces?id=${encodeURIComponent(ws)}&inst=${encodeURIComponent(inst)}`).then(j => {
+      if (my !== loadSeq || D.inst !== inst) return;
+      D.list = j.list || []; known = j.deleted || {}; seen = new Map(D.list.map(d => [d.id, JSON.stringify(strip(d))]));
+      TV.app && TV.app.redrawAll(); D.styleBar(); if (D.treeOpen) D.treeOpen();
+    }).catch(e => TV.toast("Drawings: " + e.message, "err"));
+  };
+  // another window changed this workspace's drawings (the clock's stream says so): fetch and merge
+  D.remoteChanged = function (m) {
+    if (!m || m.origin === RC.origin || !TV.WS || m.id !== TV.WS.cur || m.inst !== D.inst) return;
+    const inst = D.inst, ws = TV.WS.cur;
+    TV.getJSON(`/api/workspaces?id=${encodeURIComponent(ws)}&inst=${encodeURIComponent(inst)}`).then(j => {
+      if (D.inst !== inst || TV.WS.cur !== ws) return;
+      known = Object.assign(known, j.deleted || {});
+      const busy = new Map(D.list.filter(d => d === D.make || (D.drag && D.drag.d === d)).map(d => [d.id, d]));
+      D.list = merge(D.list.map(strip), j.list || [], known).map(d => busy.get(d.id) || d);
+      seen = new Map(D.list.map(d => [d.id, JSON.stringify(strip(d))]));
+      if (!D.list.some(d => d.id === D.sel)) D.sel = null;
+      TV.app.redrawAll(); D.styleBar(); if (D.treeOpen) D.treeOpen();
+    }).catch(() => {});
+  };
   let gone = new Set();                                       // ids deleted here since the last save (explicit, not inferred)
   const mine = new Set();                                     // ids this window deleted itself: its undo may bring those back
   let known = {};                                             // deletions other windows told us about (localStorage lags between windows)
   D.forget = ids => { for (const id of ids) { gone.add(id); mine.add(id); } };
+  let saveTimer = null, pendingDel = {};
   D.save = function () {
-    const now = Date.now(), deleted = Object.assign(dels(), known);
+    const now = Date.now();
     for (const d of D.list) { const j = JSON.stringify(strip(d)); if (seen.get(d.id) !== j) { d.u = now; } }
-    for (const id of seen.keys()) if (!D.list.some(d => d.id === id)) deleted[id] = now;
-    for (const id of gone) if (!D.list.some(d => d.id === id)) deleted[id] = now;
+    for (const id of seen.keys()) if (!D.list.some(d => d.id === id)) pendingDel[id] = now;
+    for (const id of gone) if (!D.list.some(d => d.id === id)) pendingDel[id] = now;
     gone = new Set();
-    const keep = new Map(D.list.filter(d => d === D.make || (D.drag && D.drag.d === d)).map(d => [d.id, d]));
-    D.list = merge(D.list.map(strip), TV.store.get(key(), []), deleted).map(d => keep.get(d.id) || d);
     seen = new Map(D.list.map(d => [d.id, JSON.stringify(strip(d))]));
-    TV.store.set(key(), D.list.map(strip)); TV.store.set(delKey(), deleted); known = deleted;
-    if (ch) ch.postMessage({ inst: D.inst, list: D.list.map(strip), deleted });    // the data ride along: another window's localStorage may lag
     TV.app.redrawAll(); D.styleBar(); if (D.treeOpen) D.treeOpen();
-  };
-  if (ch) ch.onmessage = e => {
-    if (!e.data || e.data.inst !== D.inst || !e.data.list) return;
-    known = Object.assign(known, e.data.deleted || {});
-    const busy = new Map(D.list.filter(d => d === D.make || (D.drag && D.drag.d === d)).map(d => [d.id, d]));
-    D.list = merge(D.list.map(strip), e.data.list, Object.assign(dels(), known)).map(d => busy.get(d.id) || d);
-    seen = new Map(D.list.map(d => [d.id, JSON.stringify(strip(d))]));
-    if (!D.list.some(d => d.id === D.sel)) D.sel = null;
-    TV.app.redrawAll(); D.styleBar();
+    // to the workspace on the server, a moment later (a drag saves often); the answer is the merged truth
+    clearTimeout(saveTimer);
+    saveTimer = setTimeout(() => {
+      const inst = D.inst, ws = TV.WS && TV.WS.cur; if (!ws) return;
+      const body = { op: "drawings", id: ws, inst, list: D.list.map(strip), deleted: pendingDel, origin: RC.origin }; pendingDel = {};
+      TV.post("/api/workspaces", body).then(j => {
+        if (D.inst !== inst || TV.WS.cur !== ws) return;
+        known = j.deleted || {};
+        const busy = new Map(D.list.filter(d => d === D.make || (D.drag && D.drag.d === d)).map(d => [d.id, d]));
+        const merged = merge(D.list.map(strip), j.list || [], known).map(d => busy.get(d.id) || d);
+        if (JSON.stringify(merged.map(strip)) !== JSON.stringify(D.list.map(strip))) { D.list = merged; seen = new Map(D.list.map(d => [d.id, JSON.stringify(strip(d))])); if (!D.list.some(d => d.id === D.sel)) D.sel = null; TV.app.redrawAll(); D.styleBar(); }
+      }).catch(e => TV.toast("Drawings not saved: " + e.message, "err"));
+    }, 250);
   };
   const strip = d => { const o = Object.assign({}, d); delete o._vp; delete o._vpKey; delete o._vpBusy; delete o._box; return o; };
   D.snap = function () { D.undo.push(JSON.stringify(D.list.map(strip))); if (D.undo.length > 100) D.undo.shift(); D.redo = []; };
@@ -149,7 +174,7 @@
     return P.map(xy);
   }
   function hit(c, d, x, y) {
-    if (d.hidden) return null;
+    if (d.hidden || D.notYet(d)) return null;
     const k = kindOf(d), pn = c.pane(), P = d.pts, s = d.s, tol = 6;
     if (D.sel === d.id && !d.locked) { const hs = handles(c, d); for (let i = 0; i < hs.length; i++) if (hs[i][0] != null && hs[i][1] != null && Math.hypot(hs[i][0] - x, hs[i][1] - y) < 8) return { d, h: i }; }
     const ax = X(c, P[0]), ay = Y(c, P[0]);
@@ -195,7 +220,7 @@
     const ctrl = e && (e.ctrlKey || e.metaKey), mg = ctrl ? "strong" : D.magnet;
     if (mg !== "off") {
       const b = c.barAtX(x);
-      if (b) {
+      if (b && b.h != null) {
         let best = null; for (const v of (ctrl ? [b.h, b.l] : [b.o, b.h, b.l, b.c])) { const dd = Math.abs(c.yOf(v) - y); if (!best || dd < best.d) best = { v, d: dd }; }
         if (best && (mg === "strong" || best.d < 14)) { p = best.v; t = b.t + c.tfSec() / 2; }
       }
@@ -219,7 +244,10 @@
   // ---------------------------------------------------------------- painting
   function paintAll(c, ctx, w, h) {
     if (D.hidden) { if (D.make) paint(c, ctx, D.make, true, w, h); return; }
-    for (const d of D.list) if (!d.hidden) { try { paint(c, ctx, d, d.id === D.sel, w, h, D.hover === d.id); } catch (e) { console.error(e); } }
+    for (const d of D.list) if (!d.hidden && !D.notYet(d)) {
+      try { paint(c, ctx, d, d.id === D.sel, w, h, D.hover === d.id); } catch (e) { console.error(e); }
+      if (d.s.alert && !["hline", "hray"].includes(kindOf(d)) && d.pts[0]) { const x = c.xOf(d.pts[0].t), y = c.yOf(d.pts[0].p); if (x != null && y != null) { ctx.font = fontOf(12); ctx.fillStyle = d.s.color || "#f0b429"; ctx.fillText("🔔", x + 6, y - 6); } }
+    }
     if (D.make) paint(c, ctx, D.make, true, w, h);
     if (D.measure) paint(c, ctx, D.measure, false, w, h);
   }
@@ -241,7 +269,7 @@
       if (ay == null) { ctx.restore(); return; }
       stroke(ctx, s); L(ctx, k === "hray" ? (ax ?? 0) : 0, Math.round(ay) + 0.5, w, Math.round(ay) + 0.5);
       if (s.text) { ctx.setLineDash([]); ctx.font = fontOf(12); ctx.fillStyle = s.textColor || s.color; ctx.textAlign = "right"; ctx.textBaseline = "bottom"; ctx.fillText(s.text, w - 8, ay - 3); ctx.textAlign = "left"; }
-      if (s.alert) { ctx.setLineDash([]); ctx.font = fontOf(12); ctx.fillStyle = s.color; ctx.fillText("⏰", (k === "hray" ? (ax ?? 0) : 4) + 4, ay - 4); }
+      if (s.alert) { ctx.setLineDash([]); ctx.font = fontOf(12); ctx.fillStyle = s.color; ctx.fillText("🔔", (k === "hray" ? (ax ?? 0) : 4) + 4, ay - 4); }
     } else if (k === "vline") { if (ax != null) { stroke(ctx, s); L(ctx, Math.round(ax) + 0.5, 0, Math.round(ax) + 0.5, h); } }
     else if (k === "crossline") { stroke(ctx, s); if (ax != null) L(ctx, Math.round(ax) + 0.5, 0, Math.round(ax) + 0.5, h); if (ay != null) L(ctx, 0, Math.round(ay) + 0.5, w, Math.round(ay) + 0.5); }
     else if (ax != null && ay != null) {
@@ -295,7 +323,7 @@
         ctx.fillStyle = s.text ? s.textColor : TV.rgba(s.textColor, 0.5); ctx.textBaseline = "alphabetic";
         lines.forEach((t, i) => ctx.fillText(t, ax, ay + i * lh));
       } else if (k === "note") {
-        const bx = X(c, P[1]) ?? ax + 40, by = Y(c, P[1]) ?? ay - 40, lines = (s.text || "Notiz").split("\n");
+        const bx = X(c, P[1]) ?? ax + 40, by = Y(c, P[1]) ?? ay - 40, lines = (s.text || "Note").split("\n");
         ctx.font = fontOf(s.fontSize); const lh = s.fontSize * 1.35, tw = Math.max(...lines.map(t => ctx.measureText(t).width));
         const bw = tw + 16, bh = lh * lines.length + 10, bxL = bx - bw / 2, byT = by - bh / 2;
         ctx.fillStyle = s.fillColor; ctx.strokeStyle = s.color; ctx.lineWidth = 1;
@@ -338,12 +366,12 @@
     const tvOf = pts => Math.round(Math.abs(pts) / tk), money = pts => pts / tk * tk * sp.pv * s.qty;
     const dT = P[1].p - P[0].p, dS = P[2].p - P[0].p, pct = v => (Math.abs(v) / P[0].p * 100).toFixed(2);
     const cx = (l + r) / 2;
-    label(ctx, cx, Math.min(yt, ye) - 12 + (yt < ye ? 0 : Math.abs(yt - ye) + 24), `Ziel: ${TV.fp(Math.abs(dT), tk)} (${pct(dT)}%) ${tvOf(dT)} T, Betrag: ${TV.fusd(Math.abs(money(dT)))}`, "#089981", "#fff", "center", 11);
-    label(ctx, cx, Math.max(ys, ye) + 12 - (ys > ye ? 0 : Math.abs(ys - ye) + 24), `Stopp: ${TV.fp(Math.abs(dS), tk)} (${pct(dS)}%) ${tvOf(dS)} T, Betrag: ${TV.fusd(Math.abs(money(dS)))}`, "#f23645", "#fff", "center", 11);
+    label(ctx, cx, Math.min(yt, ye) - 12 + (yt < ye ? 0 : Math.abs(yt - ye) + 24), `Target: ${TV.fp(Math.abs(dT), tk)} (${pct(dT)}%) ${tvOf(dT)} T, amount: ${TV.fusd(Math.abs(money(dT)))}`, "#089981", "#fff", "center", 11);
+    label(ctx, cx, Math.max(ys, ye) + 12 - (ys > ye ? 0 : Math.abs(ys - ye) + 24), `Stop: ${TV.fp(Math.abs(dS), tk)} (${pct(dS)}%) ${tvOf(dS)} T, amount: ${TV.fusd(Math.abs(money(dS)))}`, "#f23645", "#fff", "center", 11);
     const rr = Math.abs(dS) ? (Math.abs(dT) / Math.abs(dS)).toFixed(2) : "–";
-    let mid = `Menge: ${s.qty} · R:R ${rr}`;
-    if (res) mid = res.kind === "tp" ? `Ziel erreicht ${TV.fusd(Math.abs(money(dT)), true)} · R:R ${rr}` : res.kind === "sl" ? `Stopp erreicht ${TV.fusd(-Math.abs(money(dS)))} · R:R ${rr}`
-      : `Offen ${TV.fusd(money((res.price - P[0].p) * (long ? 1 : -1)), true)} · R:R ${rr}`;
+    let mid = `Qty: ${s.qty} · R:R ${rr}`;
+    if (res) mid = res.kind === "tp" ? `Target hit ${TV.fusd(Math.abs(money(dT)), true)} · R:R ${rr}` : res.kind === "sl" ? `Stop hit ${TV.fusd(-Math.abs(money(dS)))} · R:R ${rr}`
+      : `Open ${TV.fusd(money((res.price - P[0].p) * (long ? 1 : -1)), true)} · R:R ${rr}`;
     label(ctx, cx, ye, mid, res && res.kind === "tp" ? "#089981" : res && res.kind === "sl" ? "#f23645" : "#434651", "#fff", "center", 11);
   }
   function outcome(c, d) {
@@ -401,8 +429,11 @@
   // ---------------------------------------------------------------- the pointer
   function newDrawing(type, pts) {
     const tdef = T[type], s = JSON.parse(JSON.stringify(Object.assign({}, tdef.def, TV.store.get("draw.style." + type, {}))));
-    return { id: nid(), type, pts, s, locked: false, hidden: false };
+    const rt = RC.state && !RC.state.live && RC.now() != null ? Math.floor(RC.now()) : null;   // made at this replay time (live: none)
+    return { id: nid(), type, pts, s, locked: false, hidden: false, rt };
   }
+  // a drawing made later in the replay than the clock stands now does not exist yet (unless "always show")
+  D.notYet = d => d.rt != null && !d.s.always && TV.app.settings.hideFuture !== false && RC.state && !RC.state.live && RC.now() != null && d.rt > RC.now() + 1;
   function finish(c) {
     const d = D.make; D.make = null; if (!d) return;
     if (T[d.type].temp) { D.measure = d; D.done(); TV.app.redrawAll(); return; }
@@ -546,7 +577,7 @@
       const out = [], tk = c.tick();
       if (D.busy() && D.snapPt && D.snapPt.c === c) out.push({ y: c.yOf(D.snapPt.p), text: TV.fp(D.snapPt.p, tk), bg: "#363a45", fg: "#fff" });
       for (const d of D.list) {
-        if (d.hidden) continue;
+        if (d.hidden || D.notYet(d)) continue;
         const k = kindOf(d), sel = d.id === D.sel || (D.make && D.make === d);
         if ((k === "hline" || k === "hray" || k === "crossline") && d.s.showPrice) out.push({ y: c.yOf(d.pts[0].p), text: TV.fp(d.pts[0].p, tk), bg: TV.rgba(d.s.color, 1) });
         else if (sel && !["brush", "highlighter", "vline"].includes(k)) for (const q of d.pts) out.push({ y: c.yOf(q.p), text: TV.fp(q.p, tk), bg: "#2962ff" });
@@ -559,7 +590,7 @@
       const out = [];
       if (D.busy() && D.snapPt && D.snapPt.c === c) out.push({ x: c.xOf(D.snapPt.t), text: TV.fmtCross(D.snapPt.t, c.tf), bg: "#363a45", fg: "#fff" });
       for (const d of D.list) {
-        if (d.hidden) continue;
+        if (d.hidden || D.notYet(d)) continue;
         const k = kindOf(d), sel = d.id === D.sel;
         if ((k === "vline" || k === "crossline") && d.s.showTime) out.push({ x: c.xOf(d.pts[0].t), text: TV.fmtCross(d.pts[0].t, c.tf), bg: TV.rgba(d.s.color, 1) });
         else if (sel && !["brush", "highlighter", "hline", "hray"].includes(k)) for (const q of d.pts.slice(0, 2)) out.push({ x: c.xOf(q.t), text: TV.fmtCross(q.t, c.tf), bg: "#2962ff" });
@@ -569,16 +600,46 @@
   });
 
   // ---------------------------------------------------------------- alarms: a horizontal line the replay crosses
+  // alarms: a line (also sloped: the level at the clock's time), a ray or box, a channel - the replay stops when the
+  // price crosses the line or enters the box; once, then the alarm is gone
+  const ALERTABLE = new Set(["hline", "hray", "trend", "ray", "extended", "arrowline", "rect", "channel", "pricerange", "datepricerange"]);
+  const BOXES = new Set(["rect", "channel", "pricerange", "datepricerange"]);
+  function levelAt(d, t) {                                    // the price of a line at time t, or null when the line is not there at t
+    const [a, b] = d.pts, k = kindOf(d);
+    if (k === "hline") return a.p;
+    if (k === "hray") return t >= a.t ? a.p : null;
+    if (!b || b.t === a.t) return null;
+    const lo = Math.min(a.t, b.t), hi = Math.max(a.t, b.t);
+    if (k === "trend" || k === "arrowline") { if (t < lo || t > hi) return null; }
+    if (k === "ray") { const start = a; if (b.t > a.t ? t < start.t : t > start.t) return null; }
+    return a.p + (b.p - a.p) * (t - a.t) / (b.t - a.t);
+  }
+  function boxOf(d, t) {                                      // the price band of a box at time t, or null
+    const k = kindOf(d), ps = d.pts;
+    if (k === "pricerange") return [Math.min(ps[0].p, ps[1].p), Math.max(ps[0].p, ps[1].p)];
+    if (k === "channel") { const lv = levelAt({ pts: [ps[0], ps[1]], type: "trend" }, t); if (lv == null) return null; const off = ps[2] ? ps[2].p - (ps[0].p + (ps[1].p - ps[0].p) * (ps[2].t - ps[0].t) / ((ps[1].t - ps[0].t) || 1)) : 0; return [Math.min(lv, lv + off), Math.max(lv, lv + off)]; }
+    const lo = Math.min(ps[0].t, ps[1].t), hi = Math.max(ps[0].t, ps[1].t);
+    if (t < lo || t > hi) return null;
+    return [Math.min(ps[0].p, ps[1].p), Math.max(ps[0].p, ps[1].p)];
+  }
+  D.beep = function () {
+    if (TV.app.settings.alertSound === false) return;
+    try { const ac = D._ac || (D._ac = new (window.AudioContext || window.webkitAudioContext)()); const o = ac.createOscillator(), g = ac.createGain(); o.type = "sine"; o.frequency.value = 880; g.gain.value = 0.0001; o.connect(g); g.connect(ac.destination); const t0 = ac.currentTime; g.gain.exponentialRampToValueAtTime(0.25, t0 + 0.02); g.gain.exponentialRampToValueAtTime(0.0001, t0 + 0.45); o.start(t0); o.stop(t0 + 0.5); } catch (e) {}
+  };
   D.checkAlerts = function (prev, now) {
     if (prev == null || now == null || prev === now) return;
+    const t = RC.now(), tick = TV.spec(D.inst).tick;
     for (const d of D.list) {
-      if (!d.s.alert || d.hidden || (d.type !== "hline" && d.type !== "hray")) continue;
-      const p = d.pts[0].p, t = RC.now();
-      if (d.type === "hray" && t < d.pts[0].t) continue;
-      if ((prev < p && now >= p) || (prev > p && now <= p)) {
-        d.s.alert = false; D.save();
-        if (RC.state && RC.state.playing) RC.play(false);
-        TV.toast(`Alarm: Preis kreuzt ${TV.fp(p, TV.spec(D.inst).tick)}${d.s.text ? " – " + d.s.text : ""} · Replay angehalten`, "err", 6000);
+      if (!d.s.alert || d.hidden || !ALERTABLE.has(kindOf(d))) continue;
+      let hit = null;
+      if (BOXES.has(kindOf(d))) { const bx = boxOf(d, t); if (bx && now >= bx[0] && now <= bx[1] && !(prev >= bx[0] && prev <= bx[1])) hit = `price enters ${TV.fp(bx[0], tick)}–${TV.fp(bx[1], tick)}`; }
+      else { const p = levelAt(d, t); if (p != null && ((prev < p && now >= p) || (prev > p && now <= p))) hit = `price crosses ${TV.fp(p, tick)}`; }
+      if (hit) {
+        if (d.s.alertEvery) { if (d._alarmAt && performance.now() - d._alarmAt < 1500) continue; d._alarmAt = performance.now(); }   // every time: not twice within a moment
+        else { d.s.alert = false; D.save(); }                                                                                  // once: the alarm is used up
+        if (d.s.alertPause !== false && RC.state && RC.state.playing) RC.play(false);
+        D.beep();
+        TV.toast(`Alert: ${hit}${d.s.text ? " – " + d.s.text : ""}${d.s.alertPause !== false ? " · replay stopped" : ""}`, "err", 6000);
       }
     }
   };
@@ -588,7 +649,7 @@
     const b = TV.$("#left"); if (!b) return; b.replaceChildren();
     const btn = (icon, title, on, fn, more) => {
       const x = el("button.tool" + (on ? ".on" : ""), { title, onclick: fn }, TV.icon(icon));
-      if (more) { const m = el("span.more", { title: "Mehr", onclick: e => { e.stopPropagation(); more(x); } }, TV.iconSm("right", 10)); x.append(m); x.classList.add("flag"); }
+      if (more) { const m = el("span.more", { title: "More", onclick: e => { e.stopPropagation(); more(x); } }, TV.iconSm("right", 10)); x.append(m); x.classList.add("flag"); }
       b.append(x); return x;
     };
     for (const g of GROUPS) {
@@ -599,21 +660,24 @@
         TV.menu(anchor, g.tools.map(t => ({ label: nameOf(t), icon: iconOf(t), hint: T[t] && T[t].key, on: t === cur, action: () => D.setTool(t) })), { side: true, cls: "tools" });
       } : null);
     }
-    btn("ruler", "Lineal (Shift + Ziehen im Chart)", D.tool === "measure", () => D.setTool(D.tool === "measure" ? D.cursor : "measure"));
+    btn("ruler", "Ruler (Shift + drag in the chart)", D.tool === "measure", () => D.setTool(D.tool === "measure" ? D.cursor : "measure"));
     b.append(el("div.lsep"));
-    const mg = btn("magnet", { off: "Magnet aus", weak: "Magnet schwach (nahe O/H/L/C)", strong: "Magnet stark (immer O/H/L/C)" }[D.magnet] + " · Strg hält ihn kurz um", D.magnet !== "off",
+    const mg = btn("magnet", { off: "Magnet off", weak: "Magnet weak (near O/H/L/C)", strong: "Magnet strong (always O/H/L/C)" }[D.magnet] + " · Ctrl flips it while held", D.magnet !== "off",
       () => { D.magnet = D.magnet === "off" ? "weak" : "off"; TV.store.set("draw.magnet", D.magnet); D.bar(); },
-      anchor => TV.menu(anchor, [["off", "Magnet aus"], ["weak", "Schwacher Magnet"], ["strong", "Starker Magnet"]].map(([v, l]) => ({ label: l, icon: "magnet", on: D.magnet === v, action: () => { D.magnet = v; TV.store.set("draw.magnet", v); D.bar(); } })), { side: true }));
+      anchor => TV.menu(anchor, [["off", "Magnet off"], ["weak", "Weak magnet"], ["strong", "Strong magnet"]].map(([v, l]) => ({ label: l, icon: "magnet", on: D.magnet === v, action: () => { D.magnet = v; TV.store.set("draw.magnet", v); D.bar(); } })), { side: true }));
     if (D.magnet === "strong") mg.style.color = "#ff9800";
-    btn("staydraw", "Im Zeichenmodus bleiben", D.stay, () => { D.stay = !D.stay; D.bar(); });
-    btn(D.lockAll ? "lock" : "unlock", D.lockAll ? "Alle Zeichnungen entsperren" : "Alle Zeichnungen sperren", D.lockAll, () => { D.lockAll = !D.lockAll; D.bar(); });
-    btn(D.hidden ? "eyeoff" : "eye", D.hidden ? "Zeichnungen einblenden" : "Alle Zeichnungen ausblenden", D.hidden, () => { D.hidden = !D.hidden; D.sel = null; D.styleBar(); D.bar(); TV.app.redrawAll(); });
-    btn("trash", "Entfernen", false, () => D.removeAllMenu(b.lastChild), null);
+    btn("staydraw", "Stay in drawing mode", D.stay, () => { D.stay = !D.stay; D.bar(); });
+    btn(D.lockAll ? "lock" : "unlock", D.lockAll ? "Unlock all drawings" : "Lock all drawings", D.lockAll, () => { D.lockAll = !D.lockAll; D.bar(); });
+    btn(D.hidden ? "eyeoff" : "eye", D.hidden ? "Show drawings" : "Hide all drawings", D.hidden, () => { D.hidden = !D.hidden; D.sel = null; D.styleBar(); D.bar(); TV.app.redrawAll(); });
+    btn("trash", "Remove", false, () => D.removeAllMenu(), null);
   };
-  D.removeAllMenu = anchor => TV.menu(anchor, [
-    { label: `${D.list.length} Zeichnung${D.list.length === 1 ? "" : "en"} entfernen`, icon: "trash", disabled: !D.list.length, action: () => { D.snap(); D.forget(D.list.map(d => d.id)); D.list = []; D.sel = null; D.save(); TV.toast("Alle Zeichnungen entfernt – Strg+Z holt sie zurück", "", 3000); } },
-    { label: "Indikatoren dieses Charts entfernen", icon: "fx", action: () => { const c = TV.app.active; for (const s of c.studies.list.slice()) c.studies.remove(s.id); } },
-  ], { side: true });
+  D.removeAllMenu = function () {                             // a dialog: a menu opened from a menu closed with the click that opened it
+    const n = D.list.length;
+    TV.dialog({ title: "Delete all drawings?", width: 420,
+      body: b => b.append(el("div", { text: n ? `${n} drawing${n === 1 ? "" : "s"} on ${D.inst} will be deleted. Ctrl+Z brings them back.` : "There are no drawings on " + D.inst + ".", style: { color: "var(--text2)" } })),
+      buttons: [{ label: "Cancel" },
+                { label: n ? `Delete ${n} drawing${n === 1 ? "" : "s"}` : "Delete", kind: "pri", action: () => { if (!n) return; D.snap(); D.forget(D.list.map(d => d.id)); D.list = []; D.sel = null; D.save(); TV.toast("All drawings removed – Ctrl+Z brings them back", "", 3000); } }] });
+  };
 
   // ---------------------------------------------------------------- the floating style bar of a selection
   D.styleBar = function () {
@@ -621,39 +685,52 @@
     const d = D.selected(); sb.style.display = d && !D.hidden ? "flex" : "none"; sb.replaceChildren(); if (!d) return;
     const k = kindOf(d), s = d.s;
     const B = (content, title, fn, on) => { const b = el("button" + (on ? ".on" : ""), { title, onclick: e => { e.stopPropagation(); fn(b); } }); b.append(content); sb.append(b); return b; };
-    sb.append(el("span.grip", { title: T[d.type] ? T[d.type].name : "" }, TV.iconSm("grip", 18)));
+    const grip = el("span.grip", { title: (T[d.type] ? T[d.type].name + " · " : "") + "Move the bar" }, TV.iconSm("grip", 18));
+    grip.addEventListener("pointerdown", e => {
+      e.preventDefault(); e.stopPropagation();
+      const st = TV.$("#stage").getBoundingClientRect(), r0 = sb.getBoundingClientRect(), dx = e.clientX - r0.left, dy = e.clientY - r0.top;
+      const mv = ev => { const x = Math.max(0, Math.min(st.width - r0.width, ev.clientX - st.left - dx)), y = Math.max(0, Math.min(st.height - r0.height, ev.clientY - st.top - dy)); sb.style.left = x + "px"; sb.style.top = y + "px"; sb.style.transform = "none"; };
+      const up = () => { window.removeEventListener("pointermove", mv); window.removeEventListener("pointerup", up); TV.store.set("stylebar.pos", { x: parseFloat(sb.style.left), y: parseFloat(sb.style.top) }); };
+      window.addEventListener("pointermove", mv); window.addEventListener("pointerup", up);
+    });
+    const pos = TV.store.get("stylebar.pos", null);
+    if (pos) { sb.style.left = pos.x + "px"; sb.style.top = pos.y + "px"; sb.style.transform = "none"; }
+    else { const qb = TV.$("#quickbar"); sb.style.top = qb && qb.offsetParent ? (qb.offsetTop + qb.offsetHeight + 10) + "px" : "46px"; }   // not under the floating tool bar
+    sb.append(grip);
     const colorBtn = (icon, prop, title) => B(el("span", { style: { display: "flex", flexDirection: "column", alignItems: "center", gap: "1px" } }, TV.iconSm(icon, 18), el("i.sw", { style: { background: s[prop] } })), title,
       b => TV.pickColor(b, s[prop], v => { if (!b._snap) { D.snap(); b._snap = 1; } s[prop] = v; TV.store.set("draw.style." + d.type, styleMemo(d)); D.save(); }));
-    if ("color" in s && !["text", "long", "short", "frvp"].includes(k)) colorBtn(k === "highlighter" || k === "brush" ? k : "trend", "color", "Linienfarbe");
-    if ("fillColor" in s && ["rect", "channel", "note", "pricerange", "daterange", "datepricerange", "text"].includes(k)) colorBtn("rect", "fillColor", "Füllfarbe");
-    if ("textColor" in s && ["text", "note", "rect", "hline", "hray", "trend", "pricelabel"].includes(k)) colorBtn("text", "textColor", "Textfarbe");
-    if ("width" in s && !["frvp"].includes(k)) B(el("span", { text: s.width + "px" }), "Linienstärke", b => TV.menu(b, (k === "highlighter" ? [6, 10, 14, 20, 28] : [1, 2, 3, 4]).map(v => ({ label: v + "px", on: s.width === v, action: () => { D.snap(); s.width = v; TV.store.set("draw.style." + d.type, styleMemo(d)); D.save(); } }))));
-    if ("style" in s && !["brush", "highlighter"].includes(k)) B(el("span", { text: { solid: "━━", dashed: "╍╍", dotted: "┅┅" }[s.style] }), "Linienart", b => TV.menu(b, [["solid", "Durchgezogen"], ["dashed", "Gestrichelt"], ["dotted", "Gepunktet"]].map(([v, l]) => ({ label: l, on: s.style === v, action: () => { D.snap(); s.style = v; D.save(); } }))));
+    if ("color" in s && !["text", "long", "short", "frvp"].includes(k)) colorBtn(k === "highlighter" || k === "brush" ? k : "trend", "color", "Line color");
+    if ("fillColor" in s && ["rect", "channel", "note", "pricerange", "daterange", "datepricerange", "text"].includes(k)) colorBtn("rect", "fillColor", "Fill color");
+    if ("textColor" in s && ["text", "note", "rect", "hline", "hray", "trend", "pricelabel"].includes(k)) colorBtn("text", "textColor", "Text color");
+    if ("width" in s && !["frvp"].includes(k)) B(el("span", { text: s.width + "px" }), "Line width", b => TV.menu(b, (k === "highlighter" ? [6, 10, 14, 20, 28] : [1, 2, 3, 4]).map(v => ({ label: v + "px", on: s.width === v, action: () => { D.snap(); s.width = v; TV.store.set("draw.style." + d.type, styleMemo(d)); D.save(); } }))));
+    if ("style" in s && !["brush", "highlighter"].includes(k)) B(el("span", { text: { solid: "━━", dashed: "╍╍", dotted: "┅┅" }[s.style] }), "Line style", b => TV.menu(b, [["solid", "Durchgezogen"], ["dashed", "Gestrichelt"], ["dotted", "Gepunktet"]].map(([v, l]) => ({ label: l, on: s.style === v, action: () => { D.snap(); s.style = v; D.save(); } }))));
     if ("text" in s) B(TV.iconSm("text", 18), "Text", () => { const c = TV.app.active; if (["text", "note"].includes(k)) editText(c, d); else { const v = prompt("Text:", s.text || ""); if (v != null) { D.snap(); s.text = v; D.save(); } } });
-    if (k === "hline" || k === "hray") B(TV.iconSm("bell", 18), s.alert ? "Alarm aktiv – entfernen" : "Alarm: Replay anhalten, wenn der Preis die Linie kreuzt", () => { D.snap(); s.alert = !s.alert; D.save(); TV.toast(s.alert ? "Alarm gesetzt – das Replay hält an, wenn der Preis die Linie kreuzt" : "Alarm entfernt"); }, s.alert);
-    if (k === "long" || k === "short") B(TV.iconSm("order", 18), "Als Order platzieren: Limit am Einstieg mit TP und SL", () => TV.Trade && TV.Trade.fromTool(d));
-    B(TV.iconSm("gear", 18), "Einstellungen", () => D.settings(d));
-    B(TV.iconSm(d.locked ? "lock" : "unlock", 18), d.locked ? "Entsperren" : "Sperren", () => { d.locked = !d.locked; D.save(); }, d.locked);
-    B(TV.iconSm("trash", 18), "Entfernen (Entf)", () => D.remove(d));
-    B(TV.iconSm("more", 18), "Mehr", b => D.menuFor(d, b));
+    if (ALERTABLE.has(k)) B(TV.iconSm("bell", 18), s.alert ? `Alert active (${s.alertEvery ? "every time" : "once"}${s.alertPause === false ? ", without stopping" : ", stops the replay"}) – click removes it · once / every time: right-click or settings` : "Alert when the price " + (BOXES.has(k) ? "enters the range" : "crosses the line") + " · once or every time: right-click or settings", () => { D.snap(); s.alert = !s.alert; D.save(); TV.toast(s.alert ? `Alert set – ${s.alertEvery ? "every time" : "once"} when the price ` + (BOXES.has(k) ? "enters the range" : "crosses the line") : "Alert removed"); }, s.alert);
+    if (k === "long" || k === "short") B(TV.iconSm("order", 18), "Place as order: a limit at the entry with TP and SL", () => TV.Trade && TV.Trade.fromTool(d));
+    B(TV.iconSm("gear", 18), "Settings", () => D.settings(d));
+    B(TV.iconSm(d.locked ? "lock" : "unlock", 18), d.locked ? "Unlock" : "Lock", () => { d.locked = !d.locked; D.save(); }, d.locked);
+    B(TV.iconSm("trash", 18), "Remove (Del)", () => D.remove(d));
+    B(TV.iconSm("more", 18), "More", b => D.menuFor(d, b));
   };
   const styleMemo = d => { const o = {}; for (const k of ["color", "width", "style", "fillColor", "textColor"]) if (k in d.s) o[k] = d.s[k]; return o; };
   D.remove = function (d) { D.snap(); D.list = D.list.filter(x => x !== d); D.forget([d.id]); if (D.sel === d.id) D.sel = null; D.save(); };
   D.clone = function (d) { D.snap(); const n = JSON.parse(JSON.stringify(strip(d))); n.id = nid(); const c = TV.app.active; const dt = c.tfSec() * 4; n.pts = n.pts.map(q => ({ t: q.t + dt, p: q.p })); D.list.push(n); D.sel = n.id; D.save(); };
   D.menuFor = function (d, at) {
     const items = [
-      { label: "Einstellungen …", icon: "gear", action: () => D.settings(d) },
-      { label: "Klonen", icon: "clone", action: () => D.clone(d) },
-      { label: d.locked ? "Entsperren" : "Sperren", icon: d.locked ? "unlock" : "lock", action: () => { d.locked = !d.locked; D.save(); } },
+      { label: "Settings …", icon: "gear", action: () => D.settings(d) },
+      { label: "Clone", icon: "clone", action: () => D.clone(d) },
+      { label: d.locked ? "Unlock" : "Lock", icon: d.locked ? "unlock" : "lock", action: () => { d.locked = !d.locked; D.save(); } },
       { label: "Ausblenden", icon: "eyeoff", action: () => { d.hidden = true; if (D.sel === d.id) D.sel = null; D.save(); } },
       { sep: true },
-      { label: "In den Vordergrund", action: () => { D.snap(); D.list = D.list.filter(x => x !== d).concat([d]); D.save(); } },
-      { label: "In den Hintergrund", action: () => { D.snap(); D.list = [d].concat(D.list.filter(x => x !== d)); D.save(); } },
+      { label: "Bring to front", action: () => { D.snap(); D.list = D.list.filter(x => x !== d).concat([d]); D.save(); } },
+      { label: "Send to back", action: () => { D.snap(); D.list = [d].concat(D.list.filter(x => x !== d)); D.save(); } },
     ];
-    if (d.type === "hline" || d.type === "hray") items.push({ sep: true }, { label: d.s.alert ? "Alarm entfernen" : "Alarm hinzufügen (Replay anhalten)", icon: "bell", action: () => { D.snap(); d.s.alert = !d.s.alert; D.save(); } });
-    if ((d.type === "hline" || d.type === "hray") && TV.Trade) items.push({ label: `Kaufen ${TV.Trade.qty()} @ ${TV.fp(d.pts[0].p)} …`, icon: "order", action: () => TV.Trade.atPrice(d.pts[0].p, 1) }, { label: `Verkaufen ${TV.Trade.qty()} @ ${TV.fp(d.pts[0].p)} …`, icon: "order", action: () => TV.Trade.atPrice(d.pts[0].p, -1) });
-    if ((d.type === "long" || d.type === "short") && TV.Trade) items.push({ sep: true }, { label: "Als Order platzieren (Limit + TP/SL)", icon: "order", action: () => TV.Trade.fromTool(d) });
-    items.push({ sep: true }, { label: "Entfernen", icon: "trash", hint: "Entf", color: "var(--down)", action: () => D.remove(d) });
+    if (ALERTABLE.has(kindOf(d))) items.push({ sep: true }, { label: d.s.alert ? "Remove alert" : "Add alert", icon: "bell", action: () => { D.snap(); d.s.alert = !d.s.alert; D.save(); } },
+      { label: "Alert: " + (d.s.alertEvery ? "every time" : "einmal") + " → " + (d.s.alertEvery ? "einmal" : "every time"), icon: "bell", action: () => { D.snap(); d.s.alertEvery = d.s.alertEvery ? 0 : 1; D.save(); } },
+      { label: (d.s.alertPause !== false ? "✓ " : "") + "Stop the replay on alert", icon: "pause", action: () => { D.snap(); d.s.alertPause = d.s.alertPause === false; D.save(); } });
+    if ((d.type === "hline" || d.type === "hray") && TV.Trade) items.push({ label: `Buy ${TV.Trade.qty()} @ ${TV.fp(d.pts[0].p)} …`, icon: "order", action: () => TV.Trade.atPrice(d.pts[0].p, 1) }, { label: `Sell ${TV.Trade.qty()} @ ${TV.fp(d.pts[0].p)} …`, icon: "order", action: () => TV.Trade.atPrice(d.pts[0].p, -1) });
+    if ((d.type === "long" || d.type === "short") && TV.Trade) items.push({ sep: true }, { label: "Place as order (limit + TP/SL)", icon: "order", action: () => TV.Trade.fromTool(d) });
+    items.push({ sep: true }, { label: "Remove", icon: "trash", hint: "Del", color: "var(--down)", action: () => D.remove(d) });
     TV.menu(at, items);
   };
 
@@ -662,36 +739,39 @@
     const k = kindOf(d), s = d.s, before = JSON.stringify(d);
     const LS = [["solid", "durchgezogen"], ["dashed", "gestrichelt"], ["dotted", "gepunktet"]], W = [[1, "1px"], [2, "2px"], [3, "3px"], [4, "4px"]];
     const style = [];
-    if ("color" in s && !["long", "short"].includes(k)) style.push({ key: "color", label: k === "frvp" ? "Rahmen" : "Linie", type: "color", with: "width" in s && k !== "frvp" ? [{ key: "width", type: "select", options: k === "highlighter" ? [[6, "6px"], [10, "10px"], [14, "14px"], [20, "20px"], [28, "28px"]] : W }].concat("style" in s && !["brush", "highlighter"].includes(k) ? [{ key: "style", type: "select", str: true, options: LS }] : []) : [] });
-    if ("fill" in s && k !== "fib") style.push({ key: "fill", label: "Hintergrund", type: "bool", with: [{ key: "fillColor", type: "color" }] });
-    if (k === "text") style.push({ key: "bg", label: "Hintergrund", type: "bool", with: [{ key: "fillColor", type: "color" }] });
-    if ("extendL" in s) style.push({ key: "extendL", label: "Nach links verlängern", type: "bool" });
-    if ("extendR" in s) style.push({ key: "extendR", label: "Nach rechts verlängern", type: "bool" });
+    if ("color" in s && !["long", "short"].includes(k)) style.push({ key: "color", label: k === "frvp" ? "Frame" : "Line", type: "color", with: "width" in s && k !== "frvp" ? [{ key: "width", type: "select", options: k === "highlighter" ? [[6, "6px"], [10, "10px"], [14, "14px"], [20, "20px"], [28, "28px"]] : W }].concat("style" in s && !["brush", "highlighter"].includes(k) ? [{ key: "style", type: "select", str: true, options: LS }] : []) : [] });
+    if ("fill" in s && k !== "fib") style.push({ key: "fill", label: "Background", type: "bool", with: [{ key: "fillColor", type: "color" }] });
+    if (k === "text") style.push({ key: "bg", label: "Background", type: "bool", with: [{ key: "fillColor", type: "color" }] });
+    if ("extendL" in s) style.push({ key: "extendL", label: "Extend left", type: "bool" });
+    if ("extendR" in s) style.push({ key: "extendR", label: "Extend right", type: "bool" });
     if ("mid" in s) style.push({ key: "mid", label: "Mittellinie", type: "bool" });
-    if ("showPrice" in s) style.push({ key: "showPrice", label: "Preis auf der Achse", type: "bool" });
-    if ("showTime" in s) style.push({ key: "showTime", label: "Zeit auf der Achse", type: "bool" });
-    if ("alert" in s) style.push({ key: "alert", label: "Alarm (Replay anhalten)", type: "bool" });
+    if ("showPrice" in s) style.push({ key: "showPrice", label: "Price on the axis", type: "bool" });
+    if ("showTime" in s) style.push({ key: "showTime", label: "Time on the axis", type: "bool" });
+    if (ALERTABLE.has(kindOf(d))) style.push({ head: "Alert" }, { key: "alert", label: "Alert active", type: "bool" },
+      { key: "alertEvery", label: "Trigger", type: "select", options: [[0, "once, then used up"], [1, "every time"]] },
+      { key: "alertPause", label: "Stop the replay then", type: "bool", rerender: null });
+    if (d.rt != null) style.push({ key: "always", label: `Always show (drawn at ${TV.fmtCross(d.rt, 1)} replay time)`, type: "bool" });
     if ("text" in s) style.push({ key: "text", label: "Text", type: k === "text" || k === "note" ? "textarea" : "text" });
-    if ("textColor" in s) style.push({ key: "textColor", label: "Textfarbe", type: "color", with: "fontSize" in s ? [{ key: "fontSize", type: "select", options: [[10, "10"], [11, "11"], [12, "12"], [13, "13"], [14, "14"], [16, "16"], [20, "20"], [24, "24"], [28, "28"]] }] : [] });
+    if ("textColor" in s) style.push({ key: "textColor", label: "Text color", type: "color", with: "fontSize" in s ? [{ key: "fontSize", type: "select", options: [[10, "10"], [11, "11"], [12, "12"], [13, "13"], [14, "14"], [16, "16"], [20, "20"], [24, "24"], [28, "28"]] }] : [] });
     if (k === "text") style.push({ key: "bold", label: "Fett", type: "bool" });
-    if (k === "fib") style.push({ key: "fill", label: "Hintergrund", type: "bool" }, { key: "labels", label: "Beschriftung", type: "bool" });
-    if (k === "long" || k === "short") style.push({ key: "qty", label: "Kontrakte", type: "num", min: 1, max: 100 }, { key: "up", label: "Ziel / Stopp", type: "color", with: [{ key: "down", type: "color" }] }, { key: "labels", label: "Beschriftung", type: "bool" });
-    if (k === "frvp") style.push({ key: "width", label: "Breite (% des Bereichs)", type: "num", min: 5, max: 100 }, { key: "split", label: "Auf-/Ab-Volumen", type: "bool" },
-      { key: "vaUp", label: "Value Area auf / ab", type: "color", with: [{ key: "vaDown", type: "color" }] }, { key: "up", label: "Außerhalb auf / ab", type: "color", with: [{ key: "down", type: "color" }] },
-      { key: "poc", label: "POC", type: "color" }, { key: "pocExtend", label: "POC nach rechts verlängern", type: "bool" }, { key: "box", label: "Rahmen zeigen", type: "bool" },
-      { key: "numbers", label: "Zahlen auf den Zeilen", type: "select", str: true, options: [["exact", "genau"], ["short", "gekürzt"], ["off", "aus"]] });
+    if (k === "fib") style.push({ key: "fill", label: "Background", type: "bool" }, { key: "labels", label: "Beschriftung", type: "bool" });
+    if (k === "long" || k === "short") style.push({ key: "qty", label: "Contracts", type: "num", min: 1, max: 100 }, { key: "up", label: "Target / stop", type: "color", with: [{ key: "down", type: "color" }] }, { key: "labels", label: "Beschriftung", type: "bool" });
+    if (k === "frvp") style.push({ key: "width", label: "Width (% of the range)", type: "num", min: 5, max: 100 }, { key: "split", label: "Up / down volume", type: "bool" },
+      { key: "vaUp", label: "Value area up / down", type: "color", with: [{ key: "vaDown", type: "color" }] }, { key: "up", label: "Outside up / down", type: "color", with: [{ key: "down", type: "color" }] },
+      { key: "poc", label: "POC", type: "color" }, { key: "pocExtend", label: "Extend POC to the right", type: "bool" }, { key: "box", label: "Show frame", type: "bool" },
+      { key: "numbers", label: "Numbers on the rows", type: "select", str: true, options: [["exact", "genau"], ["short", "short"], ["off", "aus"]] });
     const tabs = [{ name: "Stil", render: b => TV.form(b, style, s, () => D.save()) }];
     if (k === "fib") tabs.push({ name: "Level", render: b => { for (const lv of s.levels) b.append(el("div.frow", null, el("label", { text: String(lv.v) }), el("div.ctl", null, el("input", { type: "checkbox", checked: lv.on, onchange: e => { lv.on = e.target.checked; D.save(); } }), TV.swatch(lv.color, v => { lv.color = v; D.save(); }), el("input", { type: "number", step: 0.001, value: lv.v, onchange: e => { lv.v = +e.target.value; D.save(); } })))); } });
     tabs.push({ name: "Koordinaten", render: b => {
       d.pts.forEach((q, i) => {
         const pin = el("input", { type: "number", step: TV.spec(D.inst).tick, value: TV.fp(q.p, TV.spec(D.inst).tick), onchange: e => { q.p = +e.target.value; D.save(); } });
-        b.append(el("div.frow", null, el("label", { text: `Punkt ${i + 1}` }), el("div.ctl", null, pin, el("span", { text: TV.fmtCross(q.t, 1), style: { color: "var(--muted)" } }))));
+        b.append(el("div.frow", null, el("label", { text: `Point ${i + 1}` }), el("div.ctl", null, pin, el("span", { text: TV.fmtCross(q.t, 1), style: { color: "var(--muted)" } }))));
       });
     } });
     D.snap();
-    TV.dialog({ title: T[d.type] ? T[d.type].name : "Zeichnung", width: 500, tabs,
-      buttons: [{ label: "Als Standard", action: () => { TV.store.set("draw.style." + d.type, styleMemo(d)); TV.toast("Als Standard für " + T[d.type].name + " gespeichert", "ok", 2000); return false; } },
-                { label: "Abbrechen", action: () => { const o = JSON.parse(before); Object.assign(d, o); D.undo.pop(); D.save(); } }, { label: "OK", kind: "pri" }] });
+    TV.dialog({ title: T[d.type] ? T[d.type].name : "Drawing", width: 500, tabs,
+      buttons: [{ label: "As default", action: () => { TV.store.set("draw.style." + d.type, styleMemo(d)); TV.toast("As default for " + T[d.type].name + " saved", "ok", 2000); return false; } },
+                { label: "Cancel", action: () => { const o = JSON.parse(before); Object.assign(d, o); D.undo.pop(); D.save(); } }, { label: "OK", kind: "pri" }] });
   };
 
   // ---------------------------------------------------------------- the object tree (right bar)
@@ -699,19 +779,19 @@
     let dlg;
     const render = b => {
       b.replaceChildren();
-      if (!D.list.length) { b.append(el("div.empty", { text: "Keine Zeichnungen für " + D.inst })); return; }
+      if (!D.list.length) { b.append(el("div.empty", { text: "No drawings for " + D.inst })); return; }
       const box = el("div.objtree");
       for (const d of D.list.slice().reverse()) {
         const s = d.s, col = s.color || s.textColor || "#2962ff";
         box.append(el("div.oi", null, TV.iconSm(iconOf(d.type), 20), el("i", { style: { background: col } }),
           el("span.on", { text: (T[d.type] ? T[d.type].name : d.type) + (s.text ? ` · ${s.text.slice(0, 24)}` : d.pts[0] ? ` · ${TV.fp(d.pts[0].p, TV.spec(D.inst).tick)}` : ""), style: { cursor: "pointer" }, onclick: () => { D.sel = d.id; d.hidden = false; D.save(); TV.app.goTo(d.pts[0].t); } }),
           el("button.lg-btn", { title: d.hidden ? "Einblenden" : "Ausblenden", onclick: () => { d.hidden = !d.hidden; D.save(); render(b); } }, TV.iconSm(d.hidden ? "eyeoff" : "eye")),
-          el("button.lg-btn", { title: d.locked ? "Entsperren" : "Sperren", onclick: () => { d.locked = !d.locked; D.save(); render(b); } }, TV.iconSm(d.locked ? "lock" : "unlock")),
-          el("button.lg-btn", { title: "Entfernen", onclick: () => { D.remove(d); render(b); } }, TV.iconSm("trash"))));
+          el("button.lg-btn", { title: d.locked ? "Unlock" : "Lock", onclick: () => { d.locked = !d.locked; D.save(); render(b); } }, TV.iconSm(d.locked ? "lock" : "unlock")),
+          el("button.lg-btn", { title: "Remove", onclick: () => { D.remove(d); render(b); } }, TV.iconSm("trash"))));
       }
       b.append(box);
     };
-    dlg = TV.dialog({ title: "Objektbaum · " + D.inst, width: 460, pad: false, body: b => render(b), onClose: () => { D.treeOpen = null; } });
+    dlg = TV.dialog({ title: "Object tree · " + D.inst, width: 460, pad: false, body: b => render(b), onClose: () => { D.treeOpen = null; } });
     D.treeOpen = () => render(dlg.body);
   };
 

@@ -20,6 +20,8 @@
   };
   RC.on = fn => { subs.push(fn); if (RC.state) fn(RC.state, false); };
   function take(s) {
+    if (s && s.cross) { if (TV.app && TV.app.remoteCross && s.cross.origin !== RC.origin) TV.app.remoteCross(s.cross); return; }   // another window's cursor
+    if (s && s.ws) { if (TV.Draw && TV.Draw.remoteChanged) TV.Draw.remoteChanged(s.ws); if (TV.WS) TV.WS.refresh(); return; }       // another window's drawings
     // the server runs on this machine (it listens on 127.0.0.1 only): its clock is this clock, offsetMs stays 0
     RC.state = s;
     const own = s.origin === RC.origin;
@@ -73,7 +75,7 @@
   };
   RC.shotName = function (inst, what) {         // ES_5m_2026-10-08_1230NY.png - the replay time, not the wall clock
     const t = RC.now() != null ? RC.now() : Date.now() / 1000;
-    const hm = new Intl.DateTimeFormat("de-AT", { timeZone: "America/New_York", hour: "2-digit", minute: "2-digit", hourCycle: "h23" }).format(new Date(t * 1000)).replace(":", "");
+    const hm = new Intl.DateTimeFormat("en-GB", { timeZone: "America/New_York", hour: "2-digit", minute: "2-digit", hourCycle: "h23" }).format(new Date(t * 1000)).replace(":", "");
     return `${inst || "ES"}_${what}_${RC.tradeDate(t)}_${hm}NY.png`.replace(/[^A-Za-z0-9._-]/g, "-");
   };
   RC.toast = function (el, msg) { if (!el) return; el.textContent = msg; el.classList.add("show"); clearTimeout(el._t); el._t = setTimeout(() => el.classList.remove("show"), 3500); };
@@ -96,10 +98,12 @@
   if (tzCh) tzCh.onmessage = e => RC.setTz(e.data, true);
 
   const fmts = {};
-  const fmt = (opts, zone) => { const k = zone + JSON.stringify(opts); return fmts[k] || (fmts[k] = new Intl.DateTimeFormat("de-AT", Object.assign({ timeZone: zone }, opts))); };
+  const fmt = (opts, zone) => { const k = zone + JSON.stringify(opts); return fmts[k] || (fmts[k] = new Intl.DateTimeFormat("en-GB", Object.assign({ timeZone: zone }, opts))); };
   RC.fmtTime = (t, sec) => fmt({ hour: "2-digit", minute: "2-digit", ...(sec ? { second: "2-digit" } : {}) }, RC.zone()).format(new Date(t * 1000));
   RC.fmtDay = t => fmt({ weekday: "short", day: "2-digit", month: "2-digit", year: "2-digit" }, RC.zone()).format(new Date(t * 1000));
-  RC.fmtFull = t => RC.fmtDay(t) + " " + RC.fmtTime(t, true) + " " + (tz === "NY" ? "NY" : "Wien");
+  RC.fmtFull = t => RC.fmtDay(t) + " " + RC.fmtTime(t, true) + " " + (tz === "NY" ? "NY" : "Vienna");
+  RC.fmtDate = t => RC.fmtDay(t);
+  RC.fmtIso = t => new Intl.DateTimeFormat("en-CA", { timeZone: "America/New_York", year: "numeric", month: "2-digit", day: "2-digit" }).format(new Date(t * 1000));
 
   // ---- wall times in a zone, the CME trade date, the opens
   function zoneOffset(t, zone) {        // seconds the zone is ahead of UTC at t
@@ -142,10 +146,12 @@
   const RP = window.RP = {};
   const SESS = {}, AT = {};
   let INSTS = [];
+  RP.cached = inst => SESS[inst] || null;                   // the sessions list as last fetched, without waiting (null before the first fetch)
   RP.sessions = async function (inst) {
     if (SESS[inst] && Date.now() - AT[inst] < 60000) return SESS[inst];
     const j = await (await fetch(`/tl/sessions?inst=${encodeURIComponent(inst)}`, { cache: "no-store" })).json();
     INSTS = j.instruments || INSTS;
+    if (j.specs) TV.setSpecs(j.specs);                        // the symbols' ticks and point values, from the server
     SESS[inst] = j.sessions || []; AT[inst] = Date.now();
     return SESS[inst];
   };

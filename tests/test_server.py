@@ -91,19 +91,19 @@ def test_pages_and_the_token(server):
     assert server.post("/api/folders/create", headers={"Origin": "https://evil.example"})[0] == 403
     assert server.post("/api/clock", {"action": "pause"})[0] == 200
     assert server.get("/api/status")[1]["receiver"].endswith("/ingest")
-    for path in ("/heatmap.html", "/trainer.html", "/live.html", "/app/r-clock.js", "/state", "/depth", "/api/jobs", "/api/sessions"):
+    for path in ("/heatmap.html", "/trainer.html", "/live.html", "/app/r-clock.js", "/state", "/depth", "/api/jobs", "/api/journal"):
         assert server.get(path, raw=True)[0] == 404, path
 
 
 def test_first_start_and_settings(server, tmp_path):
     os.remove(settings.CONFIG_FILE)
     code, page = server.get("/", raw=True)
-    assert code == 200 and "Erster Start" in page.decode()                    # followed the redirect to the settings
+    assert code == 200 and "First start" in page.decode()                    # followed the redirect to the settings
     code, j = server.post("/api/config", {"settings": {"DATA_DIR": DATA, "PORT": "8030"}})
     assert code == 200 and j["restart"] == ["PORT"] and not j["first_start"]
     assert server.post("/api/config", {"settings": {"DEPTH_HISTORY_DIR": "x"}})[0] == 400
     inv = server.get("/api/inventory")[1]
-    assert inv["rows"][0] == {"name": "ES", "days": 1, "first": DAY, "last": DAY, "missing": [], "with_seconds": 1, "with_ticks": 0}
+    assert inv["rows"][0] == {"name": "ES", "days": 1, "first": DAY, "last": DAY, "missing": [], "with_seconds": 1, "with_ticks": 0, "tick": 0.25, "pv": 50.0, "spec": "Tabelle"}
     ck = server.get(f"/api/check?inst=ES&date={DAY}")[1]["findings"]
     assert any("20:59" in f["text"] for f in ck) and any("109" in f["text"] for f in ck)
 
@@ -218,3 +218,110 @@ def test_lan_mode_accepts_the_machines_addresses_only(server, monkeypatch):
     M.STATE["eff"]["LAN"] = False
     code, j = server.post("/api/config", {"settings": {"LAN": "1"}})
     assert code == 200 and j["restart"] == ["LAN"]
+
+
+def test_a_replay_has_its_own_accounts_and_close_replay_deletes_them(server):
+    """leaving live opens a replay (an id in the clock); orders of that replay are booked under it, the day after
+    counts in the same replay, "Close Replay" deletes everything; a day's account without a replay is untouched"""
+    r0 = session.rth(DAY)[0]
+    code, c = server.post("/api/clock", {"action": "seek", "t": r0})
+    assert code == 200 and c["replay"].startswith("r") and not c["live"]
+    rid = c["replay"]
+    assert server.post("/api/clock", {"action": "pause"})[1]["replay"] == rid            # stays the same replay
+    feed = f"ES.1m@{DAY}"
+    assert server.post("/api/broker/order", {"feed": feed, "t": r0 + 0.5, "side": 1, "type": "market", "qty": 0.5})[0] == 200   # no replay named: the plain day account
+    code, st = server.post("/api/broker/order", {"feed": feed, "t": r0 + 0.5, "side": 1, "type": "market", "qty": 2, "session": rid})
+    assert code == 200 and st["session"] == rid
+    st = server.get(f"/api/broker/state?feed={feed}&until={r0 + 60}&session={rid}")[1]
+    assert st["pos"] == 2 and st["session_realized_usd"] == 0 and st["session_trades"] == []
+    plain = server.get(f"/api/broker/state?feed={feed}&until={r0 + 60}")[1]
+    assert plain["pos"] == 0.5                                                           # the two do not mix
+    server.post("/api/broker/flatten", {"feed": feed, "t": r0 + 120, "session": rid})
+    st = server.get(f"/api/broker/state?feed={feed}&until={r0 + 600}&session={rid}")[1]
+    assert st["pos"] == 0 and len(st["session_trades"]) == 1 and st["session_realized_usd"] == st["realized_usd"]
+    assert server.post("/api/broker/close", {"session": "nonsense"})[0] == 400
+    code, j = server.post("/api/broker/close", {"session": rid})
+    assert code == 200 and j["dropped"] == 1
+    assert server.get(f"/api/broker/state?feed={feed}&until={r0 + 600}&session={rid}")[1]["trades"] == []
+    assert server.get(f"/api/broker/state?feed={feed}&until={r0 + 60}")[1]["pos"] == 0.5
+    assert server.post("/api/clock", {"action": "live", "inst": "ES"})[1]["replay"] == ""
+
+
+def test_a_named_session_keeps_its_trades_and_journals_them(server, tmp_path, monkeypatch):
+    monkeypatch.setattr(M, "SESSIONS", M.sess.Sessions(str(tmp_path / "logs" / "sessions"), M.BOOK, M.prints_of))
+    r0 = session.rth(DAY)[0]
+    code, s = server.post("/api/sessions", {"op": "create", "name": "Oktober Opens", "inst": "ES", "start": r0, "end": DAY, "balance": 25000})
+    assert code == 200 and s["id"].startswith("s") and s["end"] == DAY
+    sid = s["id"]
+    assert server.post("/api/sessions", {"op": "create", "name": "x", "inst": "ES", "start": r0, "end": "2026-10-01"})[0] == 400
+    c = server.post("/api/clock", {"action": "session", "session": sid, "t": r0})[1]
+    assert c["replay"] == sid and not c["playing"]
+    feed = f"ES.1m@{DAY}"
+    assert server.post("/api/broker/order", {"feed": feed, "t": r0 - 7200, "side": 1, "type": "market", "qty": 1, "session": sid})[0] == 400   # before the start
+    assert server.post("/api/broker/order", {"feed": feed, "t": r0 + 10, "side": 1, "type": "market", "qty": 1, "session": sid})[0] == 200
+    server.post("/api/broker/flatten", {"feed": feed, "t": r0 + 600, "session": sid})
+    assert server.post("/api/broker/close", {"session": sid})[1]["dropped"] == 0                                   # Close Replay keeps a session
+    st = server.get(f"/api/sessions?id={sid}")[1]
+    assert len(st["trades_list"]) == 1 and st["totals"]["trades"] == 1 and st["days_list"][0]["day"] == DAY and len(st["equity"]) == 1
+    tr = st["trades_list"][0]
+    assert st["totals"]["equity"] == round(25000 + tr["usd"], 2) and st["by_hour"][0]["key"] == 9 and st["by_weekday"][0]["key"] == "Mon"
+    code, j = server.post("/api/sessions", {"op": "trade", "id": sid, "trade": tr["key"], "note": "zu früh rein", "tags": ["Open Drive"], "mistakes": ["FOMO"], "rating": 2})
+    assert code == 200 and j["rating"] == 2
+    server.post("/api/sessions", {"op": "day", "id": sid, "day": DAY, "note": "ruhiger Tag"})
+    st = server.get(f"/api/sessions?id={sid}")[1]
+    assert st["trades_list"][0]["tags"] == ["Open Drive"] and st["by_tag"][0]["key"] == "Open Drive" and st["by_mistake"][0]["key"] == "FOMO"
+    assert st["days_list"][0]["note"] == "ruhiger Tag" and "Open Drive" in st["tags"] and "FOMO" in st["tags"]
+    assert [x["id"] for x in server.get("/api/sessions")[1]["sessions"]] == [sid]
+    assert server.post("/api/sessions", {"op": "delete", "id": sid})[1]["deleted"]
+    assert server.get(f"/api/sessions?id={sid}")[0] == 400 and M.BOOK.names(f"{sid}#") == []
+
+
+def test_the_cursor_goes_through_the_stream(server):
+    import http.client, threading
+    got = []
+    def listen():
+        c = http.client.HTTPConnection("127.0.0.1", server.port, timeout=10)
+        c.request("GET", "/api/clock/stream", headers={"Host": f"127.0.0.1:{server.port}"})
+        r = c.getresponse(); buf = b""
+        while len(got) < 2:
+            chunk = r.read1(4096) if hasattr(r, "read1") else r.read(1)
+            if not chunk: break
+            buf += chunk
+            while b"\n\n" in buf:
+                line, buf = buf.split(b"\n\n", 1)
+                for l in line.split(b"\n"):
+                    if l.startswith(b"data: "): got.append(json.loads(l[6:]))
+        c.close()
+    th = threading.Thread(target=listen, daemon=True); th.start(); time.sleep(0.3)
+    assert server.post("/api/cross", {"inst": "ES", "t": 1791813750, "p": 7861.25, "origin": "abc"})[0] == 200
+    th.join(5)
+    assert len(got) == 2 and "inst" in got[0] and got[1] == {"cross": {"inst": "ES", "origin": "abc", "t": 1791813750.0, "p": 7861.25}}
+
+
+def test_workspaces_merge_drawings_and_keep_a_layout(server, tmp_path, monkeypatch):
+    monkeypatch.setattr(M, "WORKSPACES", M.workspaces.Workspaces(str(tmp_path / "logs" / "workspaces")))
+    T0 = int(time.time() * 1000)
+    code, w = server.post("/api/workspaces", {"op": "create", "name": "ES ideas", "layout": {"name": "1", "panes": [{"tf": 5}]}})
+    assert code == 200 and w["id"].startswith("w") and w["layout"]["panes"][0]["tf"] == 5
+    wid = w["id"]
+    # window A saves two drawings, window B one; B's save does not drop A's
+    a = [{"id": "d1", "type": "hline", "u": T0 + 1000}, {"id": "d2", "type": "rect", "u": T0 + 1000}]
+    assert server.post("/api/workspaces", {"op": "drawings", "id": wid, "inst": "ES", "list": a, "deleted": {}})[1]["list"].__len__() == 2
+    out = server.post("/api/workspaces", {"op": "drawings", "id": wid, "inst": "ES", "list": [{"id": "d3", "type": "trend", "u": T0 + 1500}], "deleted": {}})[1]
+    assert sorted(x["id"] for x in out["list"]) == ["d1", "d2", "d3"]
+    # A deletes d2 after B changed it: the newer stamp wins
+    out = server.post("/api/workspaces", {"op": "drawings", "id": wid, "inst": "ES", "list": [{"id": "d2", "type": "rect", "u": T0 + 3000, "s": {"x": 1}}], "deleted": {}})[1]
+    out = server.post("/api/workspaces", {"op": "drawings", "id": wid, "inst": "ES", "list": [], "deleted": {"d2": T0 + 2000}})[1]
+    assert sorted(x["id"] for x in out["list"]) == ["d1", "d2", "d3"]                       # deletion at 2000 is older than the change at 3000
+    out = server.post("/api/workspaces", {"op": "drawings", "id": wid, "inst": "ES", "list": [], "deleted": {"d1": T0 + 5000}})[1]
+    assert sorted(x["id"] for x in out["list"]) == ["d2", "d3"]
+    assert server.get(f"/api/workspaces?id={wid}&inst=ES")[1]["deleted"]["d1"] == T0 + 5000
+    assert server.get(f"/api/workspaces?id={wid}&inst=CL")[1]["list"] == []
+    # layout, rename, duplicate, list, delete
+    assert server.post("/api/workspaces", {"op": "layout", "id": wid, "layout": {"name": "2h", "panes": [{"tf": 1}, {"tf": 30}]}})[0] == 200
+    assert server.post("/api/workspaces", {"op": "rename", "id": wid, "name": "ES Oktober"})[1]["name"] == "ES Oktober"
+    dup = server.post("/api/workspaces", {"op": "duplicate", "id": wid})[1]
+    assert dup["name"] == "ES Oktober copy" and len(dup["drawings"]["ES"]["list"]) == 2 and dup["layout"]["name"] == "2h"
+    lst = server.get("/api/workspaces")[1]["workspaces"]
+    assert [x["name"] for x in lst] == ["ES Oktober", "ES Oktober copy"] and lst[0]["drawings"] == {"ES": 2}
+    assert server.post("/api/workspaces", {"op": "delete", "id": dup["id"]})[1]["deleted"] and len(server.get("/api/workspaces")[1]["workspaces"]) == 1

@@ -11,13 +11,13 @@
  *   data window              the bar and the level under the cursor in every chart type: O H L C, volume, buyers,
  *                            sellers, delta, the levels' sum against the bar's volume (≠ when they differ), the bar's
  *                            POC, and at the cursor's price bid, ask, volume, delta.
- *   right-click              "Footprint dieses Bars kopieren (CSV)" - the levels of one bar for a spreadsheet. */
+ *   right-click              "Copy this bar's footprint (CSV)" - the levels of one bar for a spreadsheet. */
 (function () {
   const { el } = TV;
   const FP = TV.FP = {};
   const MIN_COL = 14;                                        // narrower columns: the normal candles
   FP.DEF = { mode: "bidask", row: 0, imb: true, ratio: 300, imbMin: 5, poc: true, candle: true, va: false };
-  FP.MODES = [["bidask", "Bid × Ask (wie ATAS)"], ["split", "Bid | Ask als Histogramme (wie TradingView)"], ["delta", "Delta je Preis"], ["volume", "Volumen je Preis"]];
+  FP.MODES = [["bidask", "Bid × Ask (as ATAS)"], ["split", "Bid | Ask as histograms (as TradingView)"], ["delta", "Delta per price"], ["volume", "Volume per price"]];
   const cfgOf = c => (c.cfg.fp = Object.assign({}, FP.DEF, TV.store.get("fp.defaults", {}), c.cfg.fp || {}));
   const font = (px, w) => `${w || 400} ${px}px Consolas, "Cascadia Mono", Menlo, monospace`;
 
@@ -39,7 +39,7 @@
     const s = state(c), B = c.BARS; if (!B.length || c.lastT == null) return;
     i0 = Math.max(0, i0); i1 = Math.min(B.length - 1, i1);
     let a = -1, b = -1;
-    for (let i = i0; i <= i1; i++) { const e = s.map.get(B[i].t); if (!e || (!e.fin && e.until !== c.lastT)) { if (a < 0) a = i; b = i; } }
+    for (let i = i0; i <= i1; i++) { if (B[i].gap) continue; const e = s.map.get(B[i].t); if (!e || (!e.fin && e.until !== c.lastT)) { if (a < 0) a = i; b = i; } }
     if (a < 0 || s.busy) return;
     const now = performance.now(), onlyForming = a === b && b === B.length - 1 && s.map.has(B[b].t);
     if (onlyForming && now - s.at < (RC.state && RC.state.playing ? 300 : 120)) return;   // the forming bar: a few times a second
@@ -107,7 +107,7 @@
       const digits = String(vmax).length, fsz = Math.max(8, Math.min(12, Math.floor(rowH) - 1)), cw0 = fsz * 0.6;
       ctx.save(); ctx.beginPath(); ctx.rect(0, 0, w, ph); ctx.clip();
       for (let i = g.k0; i <= g.k1; i++) {
-        const b = B[i], xc = c.lx(i); if (xc == null) continue;
+        const b = B[i], xc = c.lx(i); if (xc == null || b.gap) continue;
         const left = xc - g.colW / 2 + 1, right = Math.min(xc + g.colW / 2 - 1, w - 2); if (right < 0 || left > w) continue;
         const up = b.c >= b.o, col = up ? S.up : S.down;
         let cl = left;
@@ -185,29 +185,29 @@
     if (c.cfg.type !== "footprint") return null;
     const p = cfgOf(c), vals = el("span.vals");
     const row = el("div.lg-row", null, el("span.lg-study", null, el("span.nm", { text: "Footprint · " + FP.MODES.find(m => m[0] === p.mode)[1].split(" (")[0] }), vals,
-      el("span.btns", null, el("button.lg-btn", { title: "Footprint-Einstellungen", onclick: () => FP.settings(c) }, TV.iconSm("gear")))));
+      el("span.btns", null, el("button.lg-btn", { title: "Footprint settings", onclick: () => FP.settings(c) }, TV.iconSm("gear")))));
     c._fpVals = vals; return row;
   };
   FP.legendValues = function (c) {
     if (!c._fpVals || c.cfg.type !== "footprint") return;
     const g = geometry(c); let t = "";
-    if (!c.fpOn) t = "zum Lesen hineinzoomen";
-    else if (g) { const n = FP.rowTicks(c, g); t = `Zeile ${n} Tick${n > 1 ? "s" : ""}`; }
+    if (!c.fpOn) t = "zoom in to read";
+    else if (g) { const n = FP.rowTicks(c, g); t = `Row ${n} tick${n > 1 ? "s" : ""}`; }
     if (c._fpVals.textContent !== t) c._fpVals.textContent = t;
   };
   FP.settings = function (c) {
     const p = cfgOf(c), before = JSON.stringify(p);
     const changed = () => { TV.app.saveLayout(); c.legend(); c.redraw(); };
     TV.dialog({ title: "Footprint", width: 500, body: b => TV.form(b, [
-      { key: "mode", label: "Darstellung", type: "select", str: true, options: FP.MODES },
-      { key: "row", label: "Ticks je Zeile (0 = automatisch)", type: "num", min: 0, max: 400 },
-      { key: "imb", label: "Imbalances (diagonal)", type: "bool" }, { key: "ratio", label: "Imbalance ab (%)", type: "num", min: 110, max: 2000, step: 10 },
-      { key: "imbMin", label: "… mit mindestens (Kontrakte)", type: "num", min: 0, max: 10000 },
-      { key: "poc", label: "POC je Bar umrahmen", type: "bool" }, { key: "va", label: "Value Area je Bar aufhellen", type: "bool" },
-      { key: "candle", label: "Kerze links in der Spalte", type: "bool" }], p, changed),
-      buttons: [{ label: "Werkseinstellung", action: () => { c.cfg.fp = Object.assign({}, FP.DEF); changed(); } },
-                { label: "Als Standard speichern", action: () => { TV.store.set("fp.defaults", Object.assign({}, p)); for (const x of TV.app.charts) if (x !== c) { x.cfg.fp = Object.assign({}, p); x.legend(); x.redraw(); } TV.app.saveLayout(); TV.toast("Footprint: als Standard gespeichert", "ok"); return false; } },
-                { label: "Abbrechen", action: () => { c.cfg.fp = JSON.parse(before); changed(); } }, { label: "OK", kind: "pri" }] });
+      { key: "mode", label: "Display", type: "select", str: true, options: FP.MODES },
+      { key: "row", label: "Ticks per row (0 = automatic)", type: "num", min: 0, max: 400 },
+      { key: "imb", label: "Imbalances (diagonal)", type: "bool" }, { key: "ratio", label: "Imbalance from (%)", type: "num", min: 110, max: 2000, step: 10 },
+      { key: "imbMin", label: "… with at least (contracts)", type: "num", min: 0, max: 10000 },
+      { key: "poc", label: "Frame the POC per bar", type: "bool" }, { key: "va", label: "Lighten the value area per bar", type: "bool" },
+      { key: "candle", label: "Candle at the left of the column", type: "bool" }], p, changed),
+      buttons: [{ label: "Factory setting", action: () => { c.cfg.fp = Object.assign({}, FP.DEF); changed(); } },
+                { label: "Save as default", action: () => { TV.store.set("fp.defaults", Object.assign({}, p)); for (const x of TV.app.charts) if (x !== c) { x.cfg.fp = Object.assign({}, p); x.legend(); x.redraw(); } TV.app.saveLayout(); TV.toast("Footprint: saved as default", "ok"); return false; } },
+                { label: "Cancel", action: () => { c.cfg.fp = JSON.parse(before); changed(); } }, { label: "OK", kind: "pri" }] });
   };
   FP.zoomIn = function (c) {                                 // wide enough columns for the numbers right away
     const n = c.BARS.length; if (!n) return;
@@ -220,15 +220,15 @@
     const b = c.BARS[i]; if (!b) return;
     FP.ensure(c, i, i);
     for (let k = 0; k < 40 && !FP.levels(c, i); k++) await new Promise(r => setTimeout(r, 50));
-    const lv = FP.levels(c, i); if (!lv) { TV.toast("Keine Level für diesen Bar", "err"); return; }
+    const lv = FP.levels(c, i); if (!lv) { TV.toast("No levels for this bar", "err"); return; }
     const iso = new Date(b.t * 1000).toISOString().replace(".000", "");
     const lines = ["bar_start_utc;bar_start_ny;timeframe_min;price;volume;bid_sellers;ask_buyers;delta"];
     const ny = RC.fmtFull(b.t);
     for (const [p, v, buy, sell] of lv.slice().sort((x, y) => y[0] - x[0])) lines.push([iso, ny, c.cfg.tf, TV.fp(p, c.tick()), v, sell, buy, buy - sell].join(";"));
     const sv = lv.reduce((a, x) => a + x[1], 0), sa = lv.reduce((a, x) => a + x[2], 0), sb = lv.reduce((a, x) => a + x[3], 0);
-    lines.push(["", "", "", "Summe Level", sv, sb, sa, sa - sb].join(";"), ["", "", "", "Bar (/tl/bars)", b.v, b.sell, b.buy, b.delta].join(";"));
+    lines.push(["", "", "", "Sum of levels", sv, sb, sa, sa - sb].join(";"), ["", "", "", "Bar (/tl/bars)", b.v, b.sell, b.buy, b.delta].join(";"));
     const text = lines.join("\n");
-    try { await navigator.clipboard.writeText(text); TV.toast(`Footprint ${RC.fmtTime(b.t)} kopiert (${lv.length} Level) – in eine Tabelle einfügen`, "ok"); }
+    try { await navigator.clipboard.writeText(text); TV.toast(`Footprint ${RC.fmtTime(b.t)} copied (${lv.length} levels) – paste into a spreadsheet`, "ok"); }
     catch (e) { const a = el("a", { href: "data:text/csv;charset=utf-8," + encodeURIComponent(text), download: `footprint_${c.inst}_${TV.tfName(c.cfg.tf)}_${iso.replace(/[:]/g, "")}.csv` }); document.body.append(a); a.click(); a.remove(); }
   };
 
@@ -248,22 +248,22 @@
     const b = c.BARS[i]; if (!b) return;
     const tk = c.tick(), lv = FP.levels(c, i); if (!lv) FP.ensure(c, i, i);
     const S = TV.app.settings, colr = v => v >= 0 ? S.up : S.down, sgn = v => (v > 0 ? "+" : "") + v;
-    const rows = [["head", `${c.inst} · ${TV.tfName(c.cfg.tf)}`], ["Zeit", TV.fmtCross(b.t, c.cfg.tf) + (b.forming ? " (läuft)" : "") + (b.approx ? " · aus 1s-Bars" : "")],
-      ["Eröffnung", TV.fp(b.o, tk)], ["Hoch", TV.fp(b.h, tk)], ["Tief", TV.fp(b.l, tk)], ["Schluss", TV.fp(b.c, tk), b.c >= b.o ? S.up : S.down],
-      ["Volumen", String(b.v)], ["Käufer (Ask)", String(b.buy)], ["Verkäufer (Bid)", String(b.sell)], ["Delta", sgn(b.delta), colr(b.delta)],
-      ["Delta %", b.v ? (b.delta / b.v * 100).toFixed(1) + " %" : "–", colr(b.delta)], ["Δ Session", sgn(sessionDelta(c, i)), colr(sessionDelta(c, i))]];
+    const rows = [["head", `${c.inst} · ${TV.tfName(c.cfg.tf)}`], ["Time", TV.fmtCross(b.t, c.cfg.tf) + (b.forming ? " (forming)" : "") + (b.approx ? " · from 1s bars" : "")],
+      ["Open", TV.fp(b.o, tk)], ["High", TV.fp(b.h, tk)], ["Low", TV.fp(b.l, tk)], ["Close", TV.fp(b.c, tk), b.c >= b.o ? S.up : S.down],
+      ["Volume", String(b.v)], ["Buyers (ask)", String(b.buy)], ["Sellers (bid)", String(b.sell)], ["Delta", sgn(b.delta), colr(b.delta)],
+      ["Delta %", b.v ? (b.delta / b.v * 100).toFixed(1) + " %" : "–", colr(b.delta)], ["Δ session", sgn(sessionDelta(c, i)), colr(sessionDelta(c, i))]];
     if (lv) {
       const sv = lv.reduce((a, x) => a + x[1], 0), sa = lv.reduce((a, x) => a + x[2], 0), sb = lv.reduce((a, x) => a + x[3], 0);
       let poc = lv[0]; for (const x of lv) if (x[1] > poc[1]) poc = x;
-      rows.push(["sep"], ["head", "Level des Bars"], ["Anzahl", String(lv.length)], ["Σ Volumen", String(sv) + (sv === b.v ? "  ✓" : `  ≠ ${b.v}`), sv === b.v ? null : "#ff9800"],
+      rows.push(["sep"], ["head", "Levels of the bar"], ["Count", String(lv.length)], ["Σ volume", String(sv) + (sv === b.v ? "  ✓" : `  ≠ ${b.v}`), sv === b.v ? null : "#ff9800"],
         ["Σ Ask / Σ Bid", `${sa} / ${sb}` + (sa === b.buy && sb === b.sell ? "  ✓" : "  ≠"), sa === b.buy && sb === b.sell ? null : "#ff9800"], ["POC", `${TV.fp(poc[0], tk)} (${poc[1]})`]);
       if (price != null) {
         const pr = Math.round(price / TV.TICK) * TV.TICK, x = lv.find(l => Math.abs(l[0] - pr) < 1e-9);
-        rows.push(["sep"], ["head", "Am Cursor " + TV.fp(pr, tk)]);
-        if (x) rows.push(["Bid × Ask", `${x[3]} × ${x[2]}`], ["Volumen", String(x[1])], ["Delta", sgn(x[2] - x[3]), colr(x[2] - x[3])]);
-        else rows.push(["", "nicht gehandelt"]);
+        rows.push(["sep"], ["head", "At the cursor " + TV.fp(pr, tk)]);
+        if (x) rows.push(["Bid × Ask", `${x[3]} × ${x[2]}`], ["Volume", String(x[1])], ["Delta", sgn(x[2] - x[3]), colr(x[2] - x[3])]);
+        else rows.push(["", "not traded"]);
       }
-    } else rows.push(["sep"], ["", "Level werden geladen …"]);
+    } else rows.push(["sep"], ["", "Loading levels …"]);
     const sig = JSON.stringify(rows); if (box._sig === sig) return; box._sig = sig;
     box.replaceChildren(...rows.map(r => r[0] === "sep" ? el("div.dsep") : r[0] === "head" ? el("div.dh2", { text: r[1] }) : el("div.dr", null, el("span", { text: r[0] }), el("b", { text: r[1], style: r[2] ? { color: r[2] } : null }))));
   };

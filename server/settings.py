@@ -23,20 +23,20 @@ OLD_CONFIG = os.path.join(ROOT, "trainer.cfg")
 
 # key: (group, label, kind, restart needed, help). kind: path | int | bool
 FIELDS = {
-    "DATA_DIR": ("folders", "Rithmic-Archiv", "path", False,
-                 "Der Archiv-Ordner der Rithmic Bridge, mit 1m-bars und 1s-bars darin "
-                 "(z. B. E:\\TradingData\\marketdata\\rithmic-bars-data). Standard: <Datenordner>\\candles."),
+    "DATA_DIR": ("folders", "Rithmic archive", "path", False,
+                 "The Rithmic Bridge's archive folder, with 1m-bars and 1s-bars in it "
+                 "(e.g. E:\\TradingData\\marketdata\\rithmic-bars-data). Default: <data folder>\\candles."),
     "SCREENSHOT_DIR": ("folders", "Snapshots", "path", False,
-                       "Wohin „In den Snapshot-Ordner speichern“ die Bilder legt (PNG, benannt nach Instrument, "
-                       "Zeiteinheiten und Replay-Zeit). Standard: <Datenordner>\\screenshots."),
-    "DATA_ROOT": ("folders", "Datenordner", "path", False,
-                  "Standard für die Ordner oben, wenn sie nicht einzeln gesetzt sind."),
-    "PORT": ("server", "Port", "int", True, "Die Rithmic Bridge sendet an http://127.0.0.1:<Port>/ingest. "
-             "Wirkt nach einem Neustart des Servers."),
-    "LAN": ("server", "Im Heimnetz erreichbar", "bool", True,
-            "1 = der Server hört auf allen Adressen dieses Rechners, die Seite ist dann z. B. am iPad unter "
-            "http://<IP dieses Rechners>:<Port>/ erreichbar (Windows fragt beim ersten Mal nach der Firewall-Freigabe für Python). "
-            "0 = nur dieser Rechner. Wirkt nach einem Neustart."),
+                       "Where \u201cSave to the screenshot folder” puts the images (PNG, named by instrument, "
+                       "timeframes and replay time). Default: <data folder>\\screenshots."),
+    "DATA_ROOT": ("folders", "Data folder", "path", False,
+                  "Default for the folders above when they are not set one by one."),
+    "PORT": ("server", "Port", "int", True, "The Rithmic Bridge sends to http://127.0.0.1:<port>/ingest. "
+             "Takes effect after a restart of the server."),
+    "LAN": ("server", "Reachable in the home network", "bool", True,
+            "1 = the server listens on every address of this machine; the page is then reachable e.g. on an iPad at "
+            "http://<IP of this machine>:<port>/ (Windows asks once to allow Python through the firewall). "
+            "0 = this machine only. Takes effect after a restart."),
 }
 HIDDEN = ("EXPIRE", "STALE")                                    # kept as they are in replay.cfg, not on the page
 FOLDERS = ("DATA_DIR",)                                         # the ones that must exist

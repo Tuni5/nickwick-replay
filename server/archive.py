@@ -26,8 +26,9 @@ import numpy as np
 import pandas as pd
 
 import session
+import specs
 
-TICK = 0.25
+TICK = 0.25                                   # the default; a Day carries its symbol's tick (specs.py)
 _CONTRACT = re.compile(r"^([A-Z0-9]+?)([FGHJKMNQUVXZ]\d{1,2})$")
 
 
@@ -46,12 +47,12 @@ def _epochs(col):
 class Day:
     """one session's minutes: t (epoch of the minute's start), o h l c, v, buy, sell; its levels flat: lv_i (index of
     the minute), lv_p (price in ticks), lv_v, lv_buy, lv_sell"""
-    __slots__ = ("root", "td", "t", "o", "h", "l", "c", "v", "buy", "sell", "src", "lv_i", "lv_p", "lv_v", "lv_buy", "lv_sell", "stamp")
+    __slots__ = ("root", "td", "t", "o", "h", "l", "c", "v", "buy", "sell", "src", "lv_i", "lv_p", "lv_v", "lv_buy", "lv_sell", "stamp", "tick")
     FILE, SECONDS, LIVE = 0, 1, 2                 # src: where a minute comes from (built from seconds = approximate levels)
 
     @staticmethod
     def empty(root, td):
-        d = Day(); d.root, d.td, d.stamp = root, td, ""
+        d = Day(); d.root, d.td, d.stamp, d.tick = root, td, "", specs.tick_of(root)
         for f in ("t", "lv_i", "lv_p", "lv_v", "lv_buy", "lv_sell", "v", "buy", "sell", "src"):
             setattr(d, f, np.array([], np.int64))
         for f in ("o", "h", "l", "c"):
@@ -72,7 +73,7 @@ class Day:
         i, p, v, b, s = [], [], [], [], []
         for k, r in enumerate(rows):
             for price, vol, bu, se in r.get("levels") or []:
-                i.append(k); p.append(int(round(price / TICK))); v.append(int(vol)); b.append(int(bu)); s.append(int(se))
+                i.append(k); p.append(int(round(price / d.tick))); v.append(int(vol)); b.append(int(bu)); s.append(int(se))
         d.lv_i, d.lv_p, d.lv_v, d.lv_buy, d.lv_sell = (np.array(x, np.int64) for x in (i, p, v, b, s))
         return d
 
@@ -84,7 +85,7 @@ class Day:
         return self.take(np.arange(a, b))
 
     def take(self, idx):
-        d = Day.empty(self.root, self.td); d.stamp = self.stamp
+        d = Day.empty(self.root, self.td); d.stamp = self.stamp; d.tick = self.tick
         for f in ("t", "o", "h", "l", "c", "v", "buy", "sell", "src"):
             setattr(d, f, getattr(self, f)[idx])
         remap = np.full(self.t.size, -1, np.int64); remap[idx] = np.arange(idx.size)
@@ -113,7 +114,7 @@ class Day:
             for k, t in enumerate(d.t.tolist()):
                 rows[t] = (d, k)
         order = sorted(rows)
-        out = Day.empty(root, td)
+        out = Day.empty(root, td); out.tick = days[-1].tick
         out.t = np.array(order, np.int64)
         picks = [rows[t] for t in order]
         for f in ("o", "h", "l", "c", "v", "buy", "sell", "src"):
@@ -203,13 +204,15 @@ class Archive:
         d.v, d.buy, d.sell = (b[col].to_numpy(np.int64) for col in ("volume", "buy_aggr", "sell_aggr"))
         d.src = np.zeros(d.t.size, np.int64)
         lv = pd.read_csv(pl)
+        specs.learn(root, lv["price"].to_numpy(np.float64)[:20000].tolist())      # an unknown symbol: its tick from its prices
+        d.tick = specs.tick_of(root)
         lt = _epochs(lv["minute_utc"])
         i = np.searchsorted(d.t, lt)
         ok = (i < d.t.size) & (d.t[np.minimum(i, d.t.size - 1)] == lt)      # levels of a minute the bars lack: dropped
         lv, i = lv[ok], i[ok]
         order = np.argsort(i, kind="stable")
         d.lv_i = i[order].astype(np.int64)
-        d.lv_p = np.round(lv["price"].to_numpy(np.float64)[order] / TICK).astype(np.int64)
+        d.lv_p = np.round(lv["price"].to_numpy(np.float64)[order] / d.tick).astype(np.int64)
         d.lv_v, d.lv_buy, d.lv_sell = (lv[col].to_numpy(np.int64)[order] for col in ("volume", "buy_aggr", "sell_aggr"))
         return d
 

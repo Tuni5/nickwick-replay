@@ -18,7 +18,9 @@ LOCK = threading.Lock()
 KEEPALIVE_S = 10.0                                # a comment line on the stream this often, so a dead socket shows
 SPEEDS = (0.25, 0.5, 1, 2, 5, 10, 20, 30, 60, 120, 300, 600)
 
-_state = {"inst": "", "t": None, "wall": 0.0, "speed": 10.0, "playing": False, "rev": 0, "origin": "", "live": False}
+_state = {"inst": "", "t": None, "wall": 0.0, "speed": 10.0, "playing": False, "rev": 0, "origin": "", "live": False, "replay": ""}
+# replay: the id of the replay running now. Leaving live (a seek, play, pause) opens one when none is open; "live"
+# closes it. The broker's accounts of a replay are named after it (main.py), so "Close Replay" can delete them.
 _subs = []                                        # one queue per open stream
 
 
@@ -51,8 +53,8 @@ def _publish(s):
 def change(body):
     """one change: {action: seek|play|pause|toggle|speed|inst|set, t?, speed?, inst?, origin?} -> the new state"""
     act = body.get("action")
-    if act not in ("seek", "play", "pause", "toggle", "speed", "inst", "set", "live"):
-        raise ValueError("action: seek, play, pause, toggle, speed, inst, set or live")
+    if act not in ("seek", "play", "pause", "toggle", "speed", "inst", "set", "live", "session"):
+        raise ValueError("action: seek, play, pause, toggle, speed, inst, set, live or session")
     with LOCK:
         wall = time.time()
         cur = now_t(_state, wall)
@@ -86,8 +88,17 @@ def change(body):
             s["playing"] = bool(body["playing"])
         # live (v1.2): the clock is the wall clock - now, 1x, playing; every other change leaves live
         s["live"] = act == "live" or (act == "inst" and s.get("live", False))
+        if act == "session":                                   # a named session takes the clock: its id is the replay's
+            sid = str(body.get("session") or "")
+            if not sid.startswith("s") or not sid[1:].isalnum():
+                raise ValueError("session: the session's id")
+            s["replay"] = sid
+            s["playing"] = False
         if s["live"]:
             s["t"], s["speed"], s["playing"] = wall, 1.0, True
+            s["replay"] = ""
+        elif s["t"] is not None and not s.get("replay"):
+            s["replay"] = "r" + hex(int(wall * 1000))[2:]
         if s["t"] is None:
             s["playing"] = False
         s["rev"] += 1
@@ -99,10 +110,36 @@ def change(body):
     return out
 
 
+def notify(msg):
+    """a message for every open stream (other windows), kept nowhere"""
+    with LOCK:
+        for q in list(_subs):
+            try:
+                q.put_nowait(msg)
+            except queue.Full:
+                pass
+
+
+def cross(body):
+    """POST /api/cross: one window's cursor for the others - {inst, t, p, origin} or {origin} alone when it left the
+    chart; goes to every stream as {"cross": …}, kept nowhere"""
+    inst = str(body.get("inst") or "")
+    origin = str(body.get("origin") or "")[:16]
+    t, p = body.get("t"), body.get("p")
+    msg = {"cross": {"inst": inst, "origin": origin, "t": float(t) if t is not None else None, "p": float(p) if p is not None else None}}
+    with LOCK:
+        for q in list(_subs):
+            try:
+                q.put_nowait(msg)
+            except queue.Full:
+                pass
+    return {"ok": True}
+
+
 def reset():
     """for the tests"""
     with LOCK:
-        _state.update({"inst": "", "t": None, "wall": 0.0, "speed": 10.0, "playing": False, "rev": 0, "origin": "", "live": False})
+        _state.update({"inst": "", "t": None, "wall": 0.0, "speed": 10.0, "playing": False, "rev": 0, "origin": "", "live": False, "replay": ""})
 
 
 def stream(h):

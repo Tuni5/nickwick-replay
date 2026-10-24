@@ -45,10 +45,11 @@
     GC: { tick: 0.1, pv: 100, name: "Gold" }, MGC: { tick: 0.1, pv: 10, name: "Micro Gold" },
   };
   TV.spec = inst => TV.SPECS[inst] || { tick: 0.25, pv: 50, name: inst };
-  TV.TICK = 0.25;                                        // the timeline's price grid (server/timeline.py TICK)
+  TV.setSpecs = specs => { for (const r in specs) TV.SPECS[r] = { tick: specs[r].tick, pv: specs[r].pv, name: specs[r].name }; TV.TICK = TV.spec(TV.app && TV.app.inst ? TV.app.inst() : "ES").tick; };
+  TV.TICK = 0.25;                                        // the active instrument's tick (the server's specs.py; kept current by app.js)
 
   // ---------------------------------------------------------------- numbers
-  TV.dec = tick => tick >= 1 ? 0 : tick >= 0.1 ? (Math.abs(tick * 10 - Math.round(tick * 10)) < 1e-9 ? 1 : 2) : 2;
+  TV.dec = tick => { const t = tick || 0.25; for (let d = 0; d <= 7; d++) if (Math.abs(Math.round(t * 10 ** d) - t * 10 ** d) < 1e-9) return d; return 7; };   // decimals a tick needs (0.25 → 2, 0.01 → 2, 0.1 → 1, 1/64 → 7)
   TV.fp = (p, tick) => p == null || !isFinite(p) ? "–" : (+p).toFixed(TV.dec(tick || TV.TICK));
   TV.fv = v => { v = +v || 0; const a = Math.abs(v); return a >= 1e6 ? (v / 1e6).toFixed(2) + "M" : a >= 1e4 ? (v / 1e3).toFixed(1) + "K" : a >= 1e3 ? (v / 1e3).toFixed(2) + "K" : String(Math.round(v)); };
   const usd = new Intl.NumberFormat("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
@@ -79,6 +80,7 @@
   const S = (inner, vb) => `<svg width="28" height="28" viewBox="${vb || "0 0 28 28"}" fill="none" stroke="currentColor" stroke-width="1" stroke-linecap="round" stroke-linejoin="round">${inner}</svg>`;
   const dot = (x, y) => `<circle cx="${x}" cy="${y}" r="2" fill="var(--panel)"/>`;
   const I = TV.ICONS = {
+    book: S(`<path d="M7 5h12a2 2 0 0 1 2 2v16H9a2 2 0 0 1-2-2z"/><path d="M7 5v16a2 2 0 0 0 2 2M11 9h7M11 13h7"/>`),
     cross: S(`<path d="M14 5v18M5 14h18"/>`),
     dot: S(`<circle cx="14" cy="14" r="2.5" fill="currentColor"/>`),
     arrow: S(`<path d="M10 6.5v14l3.6-3.6 2.6 5.8 2.2-1-2.6-5.7h5.1z"/>`),
@@ -133,7 +135,7 @@
     undo: S(`<path d="M9 11h9a5 5 0 010 10h-6"/><path d="M12 7l-4 4 4 4"/>`),
     redo: S(`<path d="M19 11h-9a5 5 0 000 10h6"/><path d="M16 7l4 4-4 4"/>`),
     search: S(`<circle cx="12.5" cy="12.5" r="6"/><path d="M17 17l5 5"/>`),
-    down: S(`<path d="M10 12l4 4 4-4"/>`, "0 0 28 28"),
+    down: S(`<path d="M10 12l4 4 4-4"/>`, "0 0 28 28"), up: S(`<path d="M10 16l4-4 4 4"/>`, "0 0 28 28"),
     close: S(`<path d="M8 8l12 12M20 8L8 20"/>`),
     plus: S(`<path d="M14 7v14M7 14h14"/>`),
     play: S(`<path d="M10 7.5v13l11-6.5z" fill="currentColor"/>`),
@@ -208,7 +210,7 @@
     const veil = TV.el("div.veil"), d = TV.el("div.dlg");
     if (o.width) d.style.width = o.width + "px";
     const close = () => { if (!veil.isConnected) return; veil.remove(); dlgOpen--; document.removeEventListener("keydown", key, true); if (o.onClose) o.onClose(); };
-    const head = TV.el("div.dh", null, TV.el("span", { text: o.title || "" }), TV.el("button.dx", { title: "Schließen", onclick: close }, TV.icon("close")));
+    const head = TV.el("div.dh", null, TV.el("span", { text: o.title || "" }), TV.el("button.dx", { title: "Close", onclick: close }, TV.icon("close")));
     d.append(head);
     const body = TV.el("div.db");
     if (o.tabs) {
@@ -278,6 +280,10 @@
       if (f.type === "bool") ctl.append(TV.el("input", { type: "checkbox", checked: !!obj[f.key], onchange: e => set(e.target.checked) }));
       else if (f.type === "num") ctl.append(TV.el("input", { type: "number", value: obj[f.key], min: f.min, max: f.max, step: f.step || 1, onchange: e => { let v = +e.target.value; if (f.min != null) v = Math.max(f.min, v); if (f.max != null) v = Math.min(f.max, v); e.target.value = v; set(v); } }));
       else if (f.type === "text") ctl.append(TV.el("input", { type: "text", value: obj[f.key] || "", style: { width: "100%" }, oninput: e => set(e.target.value) }));
+      else if (f.type === "time") {                           // an epoch, shown and edited as New York date and time
+        const toLocal = t => { const d = new Date(t * 1000), p = new Intl.DateTimeFormat("en-CA", { timeZone: "America/New_York", year: "numeric", month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit", hourCycle: "h23" }).formatToParts(d), g = k => p.find(x => x.type === k).value; return `${g("year")}-${g("month")}-${g("day")}T${g("hour")}:${g("minute")}`; };
+        ctl.append(TV.el("input", { type: "datetime-local", value: obj[f.key] ? toLocal(obj[f.key]) : "", onchange: e => { const v = e.target.value; if (!v) return; const [d, hm] = v.split("T"); const t = RC.zoned(d, hm, "America/New_York"); if (t) set(t); } }), TV.el("span", { text: " New York", style: { color: "var(--muted)", marginLeft: "6px" } }));
+      }
       else if (f.type === "textarea") ctl.append(TV.el("textarea", { style: { width: "100%", minHeight: "70px", background: "var(--bg)", border: "1px solid var(--line2)", borderRadius: "4px", padding: "6px" }, oninput: e => set(e.target.value) }, obj[f.key] || ""));
       else if (f.type === "select") { const s = TV.el("select", { onchange: e => set(isNaN(+e.target.value) || f.str ? e.target.value : +e.target.value) }); for (const [v, l] of f.options) s.append(TV.el("option", { value: v, text: l, selected: String(obj[f.key]) === String(v) })); ctl.append(s); }
       else if (f.type === "color") ctl.append(TV.swatch(obj[f.key], set, { alpha: f.alpha !== false }));
@@ -299,16 +305,33 @@
   };
 
   // ---------------------------------------------------------------- requests to the server
+  TV.tickOf = root => TV.spec(root).tick;
   TV.getJSON = async function (url) {
     const r = await fetch(url, { cache: "no-store" });
     const j = await r.json().catch(() => ({}));
-    if (!r.ok) throw new Error(j.error || ("HTTP " + r.status));
+    if (!r.ok) {
+      // the server was started anew: every run has its own token, the page's is from the run before - reload
+      if (r.status === 403 && /token/.test(j.error || "") && !TV._reloading) {
+        TV._reloading = true;
+        TV.toast("The server was restarted – the page reloads in 3 seconds", "err", 3000);
+        setTimeout(() => location.reload(), 3000);
+      }
+      throw new Error(j.error || ("HTTP " + r.status));
+    }
     return j;
   };
   TV.post = async function (url, body) {
     const r = await fetch(url, { method: "POST", headers: { "Content-Type": "application/json", "X-Replay-Token": window.REPLAY_TOKEN || "" }, body: JSON.stringify(body || {}) });
     const j = await r.json().catch(() => ({}));
-    if (!r.ok) throw new Error(j.error || ("HTTP " + r.status));
+    if (!r.ok) {
+      // the server was started anew: every run has its own token, the page's is from the run before - reload
+      if (r.status === 403 && /token/.test(j.error || "") && !TV._reloading) {
+        TV._reloading = true;
+        TV.toast("The server was restarted – the page reloads in 3 seconds", "err", 3000);
+        setTimeout(() => location.reload(), 3000);
+      }
+      throw new Error(j.error || ("HTTP " + r.status));
+    }
     return j;
   };
   TV.typing = e => { const t = e.target; return t && (t.isContentEditable || /INPUT|SELECT|TEXTAREA/.test(t.tagName)) && t.type !== "range" && t.type !== "checkbox"; };

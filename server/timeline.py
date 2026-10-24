@@ -15,15 +15,18 @@ up to the clock and marked forming: from the bridge's prints when it sends them 
 1-second file exists - exact, print by print), else from the 1-second file (o h l c v buyers sellers exact, the
 levels spread over each second's range).
 """
+from datetime import date, timedelta
+
 import numpy as np
 
 import session
-from archive import Day, TICK
+from archive import Day
+import specs
 
 CACHE = 400
 
 
-def _spread(secs, t0, t1):
+def _spread(secs, t0, t1, TICK=0.25):
     """the seconds in [t0, t1) as one minute dict: o h l c v buy sell exact, levels spread evenly over each second's
     tick range, whole contracts, the totals kept (largest remainder)"""
     st, so, sh, sl, sc, sv, sbuy, ssell = secs
@@ -148,7 +151,7 @@ class Timeline:
             mins = mins[~np.isin(mins, base.t)]
         if not mins.size:
             return None
-        rows = [_spread(secs, int(m), int(m) + 60) for m in mins]
+        rows = [_spread(secs, int(m), int(m) + 60, specs.tick_of(root)) for m in mins]
         return Day.from_minutes(root, td, [r for r in rows if r is not None])
 
     # ---- the minute the clock stands in
@@ -163,14 +166,14 @@ class Timeline:
             sel = live.lv_i == k
             return {"t": m0, "o": float(live.o[k]), "h": float(live.h[k]), "l": float(live.l[k]), "c": float(live.c[k]),
                     "v": int(live.v[k]), "buy": int(live.buy[k]), "sell": int(live.sell[k]), "src": Day.LIVE,
-                    "levels": [[float(p * TICK), int(v), int(b), int(s)] for p, v, b, s in zip(live.lv_p[sel], live.lv_v[sel], live.lv_buy[sel], live.lv_sell[sel])]}
+                    "levels": [[float(p * live.tick), int(v), int(b), int(s)] for p, v, b, s in zip(live.lv_p[sel], live.lv_v[sel], live.lv_buy[sel], live.lv_sell[sel])]}
         pm = self._from_prints(root, m0, until)
         if pm is not None:
             return pm
         secs = self.archive.seconds_in(root, m0, until)
         if secs is None or not secs[0].size:
             return None
-        return _spread(secs, m0, until)
+        return _spread(secs, m0, until, specs.tick_of(root))
 
     def _from_prints(self, root, m0, until):
         """the minute from the bridge's prints in [m0, until): exact, every trade at its price with its side"""
@@ -182,6 +185,7 @@ class Timeline:
         if b <= a:
             return None
         px, sz, side = px[a:b], sz[a:b], side[a:b]
+        TICK = specs.tick_of(root)
         pt = np.round(px / TICK).astype(np.int64)
         pmin = int(pt.min())
         v = np.bincount(pt - pmin, sz); buy = np.bincount(pt - pmin, sz * (side > 0)); sell = np.bincount(pt - pmin, sz * (side < 0))
@@ -249,6 +253,7 @@ class Timeline:
         lo, hi = max(t0, start), min(t1, end if until is None else min(end, until))
         if hi <= lo:
             return []
+        TICK = specs.tick_of(root)
         pr = self.prints(root)
         rows = []
         if pr is not None and pr[0].size and pr[0][0] <= lo:
@@ -272,7 +277,7 @@ class Timeline:
         st = secs[0]
         a, b = np.searchsorted(st, lo, "left"), np.searchsorted(st, hi - 1, "right")      # whole seconds only
         for k in range(a, b):
-            one = _spread(secs, int(st[k]), int(st[k]) + 1)
+            one = _spread(secs, int(st[k]), int(st[k]) + 1, TICK)
             if one is None:
                 continue
             rows.append((int(st[k]), one["o"], one["h"], one["l"], one["c"], one["v"], one["buy"], one["sell"],
@@ -280,7 +285,7 @@ class Timeline:
         return rows
 
     def _sub_bars(self, root, tfs, t0, t1, until, with_levels=False):
-        out = []
+        out, TICK = [], specs.tick_of(root)
         for td in self._in(root, t0, t1, until):
             start, end = session.bounds(td)
             rows = self._sub_rows(root, td, t0, t1 + tfs, until)
@@ -313,14 +318,46 @@ class Timeline:
                 out.append(b)
         return out
 
+    GAP_SLOTS = 500                                   # at most this many empty slots per missing day (1-minute bars: a third of a day)
+
+    def _gap_bars(self, root, tf, t0, t1, until):
+        """empty slots for weekdays the archive lacks between two sessions it has: {t, gap: true}, one per bucket of
+        the missing day, so the chart shows the missing day as a stretch of its own width (TradingView's way);
+        only when the session after the gap has begun before `until`"""
+        days = self.sessions(root)
+        out = []
+        tfs = int(round(tf * 60)) if tf < 1440 else 86400
+        for a, b in zip(days, days[1:]):
+            start_b = session.bounds(b)[0]
+            if until is not None and start_b > until:
+                break
+            d = date.fromisoformat(a) + timedelta(days=1)
+            while d.isoformat() < b:
+                if d.weekday() < 5:
+                    s0, s1 = session.bounds(d.isoformat())
+                    if s1 > t0 and s0 < t1:
+                        n = max(1, min(self.GAP_SLOTS, (s1 - s0) // tfs))
+                        step = (s1 - s0) / n
+                        for k in range(n):
+                            t = int(s0 + k * step)
+                            if t0 <= t < t1:
+                                out.append({"t": t, "gap": True, "day": d.isoformat()})
+                d += timedelta(days=1)
+        return out
+
     def bars(self, root, tf, t0, t1, until=None):
         """bars of tf minutes whose bucket starts in [t0, t1), nothing after `until`; tf below one minute (5 s, 15 s,
-        30 s: tf = 1/12, 1/4, 1/2) come from the prints or the seconds"""
+        30 s: tf = 1/12, 1/4, 1/2) come from the prints or the seconds. Weekdays the archive lacks between sessions
+        come as empty slots ({t, gap: true}), so a missing day keeps its width on the chart."""
         if tf < 1:
-            return self._sub_bars(root, int(round(tf * 60)), t0, t1, until)
-        out = []
-        for td in self._in(root, t0, t1, until):
-            out.extend(b for b in self._session_bars(root, td, tf, until) if t0 <= b["t"] < t1)
+            out = self._sub_bars(root, int(round(tf * 60)), t0, t1, until)
+        else:
+            out = []
+            for td in self._in(root, t0, t1, until):
+                out.extend(b for b in self._session_bars(root, td, tf, until) if t0 <= b["t"] < t1)
+        gaps = self._gap_bars(root, tf, t0, t1, until)
+        if gaps:
+            out = sorted(out + gaps, key=lambda b: b["t"])
         return out
 
     # ---- levels
@@ -328,6 +365,7 @@ class Timeline:
         """every level row of the whole minutes in [t0, t1) before `until`, plus the forming minute's: arrays
         (minute t, price in ticks, volume, buy, sell)"""
         ts, ps, vs, bs, ss = [], [], [], [], []
+        TICK = specs.tick_of(root)
         hi = t1 if until is None else min(t1, until)
         for td in self._in(root, t0, t1, until):
             d = self.minutes(root, td)
@@ -354,7 +392,7 @@ class Timeline:
         if tf < 1:
             return {b["t"]: b["levels"] for b in self._sub_bars(root, int(round(tf * 60)), t0, t1, until, True) if b["levels"]}
         tds = self._in(root, t0, t1 + tf * 60, until)
-        out = {}
+        out, TICK = {}, specs.tick_of(root)
         for td in tds:
             start, end = session.bounds(td)
             mt, p, v, b, s = self._rows(root, max(t0, start), min(t1 + tf * 60, end), until)
@@ -379,6 +417,7 @@ class Timeline:
         mt, p, v, b, s = self._rows(root, t0, t1, until)
         if p.size == 0:
             return {"levels": [], "poc": None, "vah": None, "val": None, "total": 0}
+        TICK = specs.tick_of(root)
         pmin = int(p.min())
         sv = np.bincount(p - pmin, v); sb = np.bincount(p - pmin, b); ss = np.bincount(p - pmin, s)
         idx = np.flatnonzero(sv > 0)

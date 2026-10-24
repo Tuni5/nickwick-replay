@@ -93,6 +93,80 @@ Databento, no MBO: the data are the Rithmic Bridge's archive and its live feed, 
   point value) in the broker, the ticket, the labels and the panel; "Max. Risiko": the contracts follow the risk
   amount and the stop-loss distance, rounded down to a tenth.
 
+- The replay has a definition now (the user's: loose, as TradingView): "Replay" dims the chart and asks for the start
+  point; the pick opens a replay with an id in the clock (clock.py "replay"), shared by every window; what is
+  traded in it is booked under that id (one book per trade date of the replay; the realised P/L and the trades
+  summed over its days in the panel - an open position does not cross 17:00 New York); jumps inside the replay
+  keep the id. "Replay" again (or the × of the bar) asks once "Replay beenden?" and deletes the replay's accounts
+  (POST /api/broker/close); the chart is live again. Drawings stay. A day account without a replay (used by
+  nothing now) is untouched. Next: accounts mapped to named sessions (a TradeZella-like window), on this base.
+
+- The trace of a trade: the broker's book keeps every action with its replay time (an order, every move of a stop or
+  target, a cancel, a flatten); the state carries them (actions), and a trade clicked in the history shows its moves
+  on the chart - entry order, stop and target as steps over time, the move as a dotted riser, the trade as a dotted
+  line from entry to exit - and, double-clicked, as a log in words with the fills. Works for a replay's account and
+  the live paper account alike; a named session later gets it as it is.
+- Drawings carry the replay time they were made at (rt); in a replay a drawing made later than the clock stands is
+  not shown or hit (TradingView does not do this; the user wants it). Drawings made live carry none and always show;
+  "Immer zeigen" in a drawing's settings exempts it; the chart setting "Zeichnungen erst ab der Replay-Zeit …" turns
+  the rule off.
+
+- The journal (sessions.py, journal.js), after TradeZella's shape without its AI and mentors: named sessions (name,
+  instrument, start moment, optional end date, balance) that take the clock as the replay's id "s…" so what is
+  traded is booked under them and kept; the trade page (figures, moves, note, setup tags, mistakes, rating 1-5);
+  the calendar (P/L and trades per day, a note per day); the dashboard (totals, equity curve, by hour, weekday,
+  tag, mistake, exit). Every figure is replayed from the books by the broker. "Replay beenden" on a session only
+  leaves it ("Session verlassen?"); deleting is in the journal. Open with J or the book icon.
+
+- The user's CL screenshot: the server kept one price grid of 0.25 for every symbol, so 25 cent-levels of CL fell
+  into one and the profile showed millions. Now specs.py holds the contract table (tick, dollars per point, name)
+  for the common CME/CBOT/NYMEX/COMEX/CBOE symbols and their micros; a symbol not in it gets its tick learned from
+  the finest step in its own levels (gcd of the price differences) and 1 $ a point; every Day carries its tick,
+  timeline, profiles, footprint, broker and the page use it; the settings page shows tick and $/point per
+  instrument and marks a learned tick with "?". A test keeps CL's cents apart.
+
+- Two windows and the broker: each window stamps an action with its own replay clock, and the clocks differ by the
+  latency, so a stop moved in window B could land "before" window A's last action and branch it away ("Neuer
+  Zweig … verworfen"). The book now treats an action less than two seconds behind the last one as a later action
+  with an early stamp and puts it after; a real jump back still branches. And a window follows the other's
+  switch between live and replay (the Replay button, the bar, the panel) - it only followed the instrument before.
+
+- The global cursor goes through the server now (POST /api/cross, relayed on the clock's event stream as
+  {"cross": …}), not through a BroadcastChannel, which only reached windows of the same browser profile: every
+  window and every device in the home network sees the cursor of the one with the mouse. Checked between two
+  separate browser profiles.
+
+- The selection bar (style bar) is draggable by its grip, its spot kept; by default it sits under the floating tool
+  bar, which had covered it. Alarms on every line (sloped too: the level at the clock's time), ray, box, channel and
+  price range - the bell in the bar, the right-click menu and the settings; a short tone on alarm (settings:
+  "Ton bei Alarm").
+
+- Time without trading: the clock, playing, that leaves a session (Friday 17:00 New York, a holiday) jumps to the
+  next session in the archive instead of ticking through the weekend; the calendar never selects a day the archive
+  does not have. A weekday missing between two archive sessions keeps its width on the chart: the server sends empty
+  slots for it ({t, gap: true, day}, one per bucket, at most 500 a day; timeline._gap_bars), the chart takes them as
+  whitespace and every module skips them (legend says NO DATA, no cluster, no volume, no magnet), and a red hatched
+  box over the slots carries "NO DATA · Mi., 14.10.26" on a plate in the middle.
+
+- A day the archive has without 1-second bars and tick export (the chip's "1s Data is missing") is marked on the
+  chart too, softer than a missing day: one gold hatched band along the top edge over those days (a fixed place;
+  at least a day's width above the highest of their candles, never deeper than 40 % of the pane, never thinner
+  than 36 px), gold day borders inside the band, "NO 1s DATA · Mon, 05/10/26" when the day is wide, "NO 1s" when
+  not. Long stretches of history without seconds no longer drown the chart in hatching.
+
+- The whole user interface is in English now (the pages, every dialog, the settings page, the server's settings
+  labels), dates in en-GB with English weekday names ("Mon, 12/10/26"), the calendars' headers Mon … Sun, the
+  trading-day buttons 1D 3D 5D 10D 1M. The margin between a no-seconds day's candles and its gold hatching is a
+  third of the day's width; "Delete all drawings …" asks in a dialog and works from the context menu.
+
+- Workspaces (workspaces.py, workspace.js), as TradingView's layouts: a named place with its own chart layout and
+  its own drawings per instrument, kept on the server under logs/workspaces, so every window and device sees the
+  same; the window's choice of workspace is its own. The top bar's "Workspace" button switches, creates, renames,
+  duplicates, deletes. Drawings no longer live in localStorage: a save goes to the server (debounced 250 ms), the
+  server merges by id and stamp and tells the other windows over the clock's stream; the first run turns the
+  browser's old layout and drawings into "Default". A workspace is not tied to the replay - it is where ideas are
+  drawn, replayed or not. Checked across two browser profiles: draw, switch, draw elsewhere, switch back, delete.
+
 ## Checked in the browser (headless Chromium, the real day plus synthetic days)
 
 Scrolling back while playing at 30x loads the older sessions all the way (from = 0); the footprint on the real day at

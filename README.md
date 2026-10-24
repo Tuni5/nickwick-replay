@@ -37,6 +37,22 @@ someone else is refused.
     1-second bars; live the bridge's prints), the account a pure function of the actions and the clock
   - `clock.py` the replay clock, `live.py` the bridge's live data, `main.py` the HTTP server, `settings.py` replay.cfg
 
+## Workspaces
+
+The "Workspace" button in the top bar. A workspace holds a chart layout (panes, timeframes, chart types,
+indicators) and its own drawings per instrument, on the server, shared by every window and device. Keep an "ES
+ideas" workspace, a "backtest October" one with other drawings, switch between them; a workspace is independent of
+the replay. Two windows drawing in the same workspace never overwrite each other: the server merges by drawing and
+time stamp.
+
+## The journal
+
+J or the book icon in the right bar. A session has a name, an instrument, a start moment, an optional end date and
+a starting balance; "Starten" sets the clock to its start and books everything traded under it, kept until the
+session is deleted. Per trade: the figures, its moves, a note, setup tags, mistakes, a rating. The calendar shows
+P/L and trades per day with a note per day; the dashboard the totals, the equity curve and the distribution by hour,
+weekday, tag, mistake and exit. Every figure is replayed from the fills, nothing is estimated.
+
 ## The rules of the data
 
 - A whole minute shown is its minute file's row: exact volume per price with the aggressor side. Only the minute the
@@ -47,6 +63,8 @@ someone else is refused.
 - Bars of seconds (5 s, 15 s, 30 s) come from the bridge's prints where they exist, else from the 1-second bars with
   the levels spread (marked approx). Minutes and up come from the minute files.
 - Nothing after the clock exists: bars, profiles, levels, the account.
+- A replay is one thing from "Replay" to "Replay beenden": its orders, positions and trades are its own (summed over
+  the days it runs through), and ending it deletes them. Drawings stay.
 - Fills: a market order takes the next print on its side, a resting limit fills when a print trades through it, a
   stop at the print that crossed it. Without a tick export the prints are a path through each second (open, low,
   high, close or open, high, low, close by the second's direction): an assumption, the panel says so.

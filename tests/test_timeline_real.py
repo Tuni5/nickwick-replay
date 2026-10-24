@@ -3,7 +3,7 @@ straight from the files (no code in common)"""
 import session
 import timeline as T
 import reference as R
-from conftest import DAY
+from conftest import DAY, DATA
 
 START, END = session.bounds(DAY)
 
@@ -136,3 +136,25 @@ def test_bars_of_seconds_from_the_real_seconds(tl):
     lv = tl.levels("ES", 5 / 60, r0, r0 + 10)
     for t, rows in lv.items():
         assert sum(v for _, v, _, _ in rows) == sum(s[5] for s in secs if t <= s[0] < t + 5)
+
+
+def test_a_missing_weekday_comes_as_empty_slots(tmp_path):
+    """an archive with Monday and Wednesday: Tuesday arrives as gap slots between them, one per bucket, flagged"""
+    import shutil, os
+    import archive as A, timeline as T
+    for d, src in (("2026-10-12", "2026-10-12"), ("2026-10-14", "2026-10-12")):
+        dst = tmp_path / "1m-bars" / "ES"; dst.mkdir(parents=True, exist_ok=True)
+        for suf in ("_bars.csv", "_levels.csv", ".meta.json"):
+            p = os.path.join(DATA, "1m-bars", "ES", src + suf)
+            txt = open(p).read().replace("2026-10-11T", "2026-10-13T").replace("2026-10-12", "2026-10-14") if d == "2026-10-14" else open(p).read()
+            (dst / (d + suf)).write_text(txt)
+    tl = T.Timeline(A.Archive(str(tmp_path)))
+    assert tl.sessions("ES") == ["2026-10-12", "2026-10-14"]
+    bars = tl.bars("ES", 30, 0, 4e9)
+    gaps = [b for b in bars if b.get("gap")]
+    s0, s1 = session.bounds("2026-10-13")
+    assert len(gaps) == 46 and gaps[0]["t"] == s0 and gaps[-1]["t"] < s1 and all(b["day"] == "2026-10-13" for b in gaps)
+    real = [b for b in bars if not b.get("gap")]
+    assert all(real[i]["t"] < real[i + 1]["t"] for i in range(len(real) - 1)) and bars == sorted(bars, key=lambda b: b["t"])
+    assert [b for b in tl.bars("ES", 30, 0, 4e9, s0 + 3600) if b.get("gap")] == []          # the clock inside the gap: nothing after it yet
+    assert len([b for b in tl.bars("ES", 1, 0, 4e9) if b.get("gap")]) == T.Timeline.GAP_SLOTS
