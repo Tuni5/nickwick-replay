@@ -1,0 +1,68 @@
+/* mobile.css - the replay on an iPad or a phone in the home network (LAN=1 in replay.cfg). The desktop look stays
+   above 1100 px; below, the side bars make room for the chart, buttons grow to finger size, hover-only controls show
+   always, and on a phone the drawing bar and the trading panel step back. Loaded after tv.css. */
+
+/* touch: no hover - the legend's and the ticket's buttons are always there, targets at least 36 px */
+@media (hover: none) {
+  .lg-study .btns { display: inline-flex; }
+  .tool .more { display: flex; }
+  .tb, .tool, .wb, #replay .rb, .lg-btn, .btn { min-height: 36px; }
+  .qt { height: 40px; }
+  .plus { width: 26px; height: 26px; font-size: 20px; }
+  .stylebar button { height: 36px; min-width: 36px; }
+  table.grid td, table.grid th { padding: 10px 10px; }
+}
+
+/* iPad (landscape 1024-1180, portrait 768-834) */
+@media (max-width: 1180px) {
+  #main { grid-template-columns: 44px 1fr auto 0; gap: 3px; }
+  #right { display: none; }
+  .tool { width: 40px; height: 36px; }
+  #top { overflow-x: auto; scrollbar-width: none; gap: 0; }
+  .tb { padding: 0 5px; min-width: 28px; flex: none; }
+  .tb.sym { padding: 0 8px 0 4px; }
+  .sep { margin: 0 2px; }
+  .tb .cap { display: none; }                       /* icons only in the top bar */
+  .tb.trade .cap, .tb.trade { display: inline-flex; }
+  .tb.trade span { display: inline; }
+  .clockchip { font-size: 12px; padding: 0 4px; }
+  #ticket { position: absolute; right: 0; top: 0; bottom: 0; z-index: 60; width: min(320px, 92vw); box-shadow: var(--shadow); }
+  #replay .rrow { flex-wrap: wrap; justify-content: center; row-gap: 2px; }
+  #replay .rtime { min-width: 0; }
+  #bottom .bsum { display: none; }
+  .legend { max-width: calc(100% - 70px); }
+  .lg-row { font-size: 12px; }
+  .lg-title { font-size: 13px; }
+  .dlg { width: min(560px, calc(100vw - 16px)); }
+  .frow { grid-template-columns: 130px 1fr; }
+}
+
+/* phone (portrait up to 500 px) */
+@media (max-width: 500px) {
+  #app { grid-template-rows: 44px 1fr; gap: 2px; }
+  #top { flex-wrap: nowrap; overflow-x: auto; scrollbar-width: none; padding: 0 4px; }
+  #top .sep { display: none; }
+  #main { grid-template-columns: 0 1fr auto 0; gap: 0; }
+  #left { display: none; }                          /* drawing on a phone: not sensible - the tools stay on the iPad */
+  #charts { gap: 1px; }
+  .legend { left: 4px; top: 4px; gap: 0; }
+  .lg-title .ex { display: none; }
+  .lg-ohlc { display: none; }                       /* the data window has the numbers */
+  .qt { height: 36px; } .qt button { min-width: 64px; padding: 0 6px; } .qt button span { font-size: 12px; }
+  #cbar { font-size: 11px; padding: 0 2px; }
+  #cbar .tb { padding: 0 4px; }
+  #replay .rrow { padding: 2px; }
+  #replay .rb { padding: 0 5px; font-size: 12px; }
+  #replay .rsep { display: none; }
+  #bottom { min-height: 30px; }
+  #bottom .bhead { height: 30px; overflow-x: auto; scrollbar-width: none; }
+  #bottom .btab { padding: 0 7px; font-size: 12px; }
+  #ticket { width: 100vw; }
+  #dwin { right: 8px; top: 40px; width: min(240px, calc(100vw - 16px)); font-size: 11px; }
+  .stylebar { top: 8px; max-width: calc(100vw - 8px); overflow-x: auto; }
+  .dlg .dh { padding: 10px 14px; font-size: 15px; }
+  .dlg .db { padding: 10px 14px; }
+  .frow { grid-template-columns: 1fr; gap: 4px; }
+  .frow input[type=number] { width: 100%; }
+  #toasts { right: 8px; bottom: 90px; left: 8px; align-items: stretch; }
+}

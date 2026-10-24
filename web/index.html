@@ -1,0 +1,45 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, maximum-scale=1">
+<title>Replay</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='6' fill='%232962ff'/%3E%3Cpath d='M7 22l6-7 5 4 7-9' stroke='white' stroke-width='3' fill='none' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E">
+<link rel="stylesheet" href="/tv/tv.css">
+<link rel="stylesheet" href="/tv/mobile.css">
+</head>
+<!-- tv.html - the replay, as TradingView looks: one to four charts, drawing tools, volume profile, market profile,
+     VWAP, footprint, simulated orders. Time comes from the server's replay clock (server/clock.py), bars from the
+     timeline (/tl/bars), profiles from /tl/amt and /tl/profile, the footprint from /tl/levels, orders from the broker
+     (/api/broker). Served at / . Modules: web/tv/*.js, loaded in order, one namespace TV (clock.js: RC, RP). -->
+<body class="th-neu">
+<div id="app">
+  <header id="top"></header>
+  <div id="main">
+    <nav id="left"></nav>
+    <section id="center">
+      <div id="stage">
+        <div id="charts"></div>
+        <div id="replay"></div>
+        <div id="cbar"></div>
+      </div>
+      <div id="bottom"></div>
+    </section>
+    <aside id="ticket"></aside>
+    <nav id="right"></nav>
+  </div>
+</div>
+<div id="toasts"></div>
+<script>window.REPLAY_TOKEN = "__REPLAY_TOKEN__";</script>
+<script src="/vendor/lightweight-charts.js"></script>
+<script src="/tv/clock.js"></script>
+<script src="/tv/ui.js"></script>
+<script src="/tv/chart.js"></script>
+<script src="/tv/studies.js"></script>
+<script src="/tv/footprint.js"></script>
+<script src="/tv/draw.js"></script>
+<script src="/tv/trade.js"></script>
+<script src="/tv/replay.js"></script>
+<script src="/tv/app.js"></script>
+</body>
+</html>

@@ -1,0 +1,10 @@
+# replay.cfg.example - you do not need to copy this: start Nick.cmd and the settings page
+# (http://127.0.0.1:8021/config.html) writes replay.cfg itself. Editing by hand works too: KEY=VALUE, one per line.
+
+# the Rithmic Bridge's archive (the folder with 1m-bars and 1s-bars in it)
+DATA_DIR=E:\TradingData\marketdata\rithmic-bars-data
+# where snapshots go (default: <DATA_ROOT>\screenshots)
+# SCREENSHOT_DIR=E:\TradingData\screenshots
+# DATA_ROOT=...
+# the Rithmic Bridge's "Viewer" must be http://127.0.0.1:<PORT>/ingest
+# PORT=8021

@@ -1,0 +1,166 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, maximum-scale=1">
+<title>Einstellungen · Replay</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='6' fill='%232962ff'/%3E%3Cpath d='M7 22l6-7 5 4 7-9' stroke='white' stroke-width='3' fill='none' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E">
+<link rel="stylesheet" href="/tv/tv.css">
+<link rel="stylesheet" href="/tv/mobile.css">
+<!-- config.html - the settings page: the folders (replay.cfg), what the Rithmic archive holds and what does not add
+     up in it, the live data from the Rithmic Bridge, the port. Talks to /api/config, /api/inventory, /api/check,
+     /api/status, /api/folders/create (server/main.py); POSTs carry this run's token. The first start lands here. -->
+<style>
+  html, body { overflow: auto; height: auto; min-height: 100%; background: var(--bg); }
+  .page { max-width: 980px; margin: 0 auto; padding: 22px 24px 60px; }
+  .top { display: flex; align-items: center; gap: 14px; margin-bottom: 18px; }
+  .top h1 { font-size: 22px; font-weight: 500; margin: 0; flex: 1; }
+  .card { background: var(--surface); border-radius: 8px; padding: 18px 20px; margin-bottom: 16px; }
+  .card h2 { font-size: 16px; font-weight: 500; margin: 0 0 4px; }
+  .card .sub { color: var(--muted); font-size: 12px; margin-bottom: 12px; }
+  .f { display: grid; grid-template-columns: 170px 1fr; gap: 6px 14px; align-items: start; padding: 8px 0; border-top: 1px solid var(--line); }
+  .f:first-of-type { border-top: 0; }
+  .f label { color: var(--text2); padding-top: 7px; }
+  .f input { width: 100%; height: 34px; border: 1px solid var(--line2); background: var(--bg); border-radius: 4px; padding: 0 10px; outline: none; }
+  .f input:focus { border-color: var(--blue); }
+  .f .help { grid-column: 2; color: var(--muted); font-size: 12px; }
+  .f .eff { grid-column: 2; font-size: 12px; }
+  .ok { color: var(--up); } .bad { color: #ffb74d; } .err { color: var(--down); }
+  .row { display: flex; gap: 10px; align-items: center; margin-top: 12px; flex-wrap: wrap; }
+  .banner { border-left: 3px solid var(--blue); background: var(--blue-bg); padding: 12px 16px; border-radius: 6px; margin-bottom: 16px; }
+  code { background: var(--bg); border: 1px solid var(--line2); border-radius: 4px; padding: 2px 6px; font-family: Consolas, Menlo, monospace; }
+  table.grid td.miss { max-width: 260px; white-space: normal; color: var(--muted); }
+</style>
+</head>
+<body class="th-neu">
+<script>try { const s = JSON.parse(localStorage.getItem("tv.settings") || "{}"); document.body.className = "th-" + (s.theme || "neu"); } catch (e) {}</script>
+<div class="page">
+  <div class="top">
+    <h1>Einstellungen</h1>
+    <span id="cfgfile" style="color:var(--muted);font-size:12px"></span>
+    <a class="btn blue" href="/" style="display:inline-flex;align-items:center;text-decoration:none">Zum Replay</a>
+  </div>
+  <div id="first" class="banner" hidden>
+    <b>Erster Start.</b> Trag unten den Archiv-Ordner der Rithmic Bridge ein (der Ordner mit <code>1m-bars</code> und
+    <code>1s-bars</code> darin) und speichere. Danach geht es mit „Zum Replay“ los.
+  </div>
+
+  <div class="card">
+    <h2>Ordner</h2>
+    <div class="sub">Gespeichert in <span id="cfgpath"></span>. Leer = Standard (grau angezeigt).</div>
+    <div id="fields-folders"></div>
+    <div class="row">
+      <button class="btn pri" id="save" disabled>Speichern</button>
+      <button class="btn" id="mkdirs">Fehlende Ordner anlegen</button>
+      <span id="msg" style="color:var(--muted)"></span>
+    </div>
+  </div>
+
+  <div class="card">
+    <h2>Rithmic-Archiv</h2>
+    <div class="sub" id="inv-sub">–</div>
+    <div id="inv"></div>
+    <div class="row"><span style="color:var(--text2)">Datenprüfung eines Tages:</span><select id="ck-inst" style="height:30px;background:var(--bg);border:1px solid var(--line2);border-radius:4px;color:var(--text)"></select>
+      <input id="ck-date" placeholder="2026-10-12" style="height:30px;width:130px;background:var(--bg);border:1px solid var(--line2);border-radius:4px;padding:0 8px;color:var(--text)">
+      <button class="btn" id="ck-go">Prüfen</button></div>
+    <div id="ck-out" style="margin-top:8px;font-size:12px"></div>
+  </div>
+
+  <div class="card">
+    <h2>Live-Daten</h2>
+    <div class="sub">Im Fenster der Rithmic Bridge: Modus Live, „Viewer“ = <code id="receiver">http://127.0.0.1:8021/ingest</code>.
+      Start und Stopp passieren dort; hier siehst du nur, was ankommt. Im Replay schaltet „Live“ die Uhr auf jetzt.</div>
+    <div id="live"></div>
+  </div>
+
+  <div class="card">
+    <h2>Server</h2>
+    <div id="fields-server"></div>
+  </div>
+</div>
+<script>
+window.REPLAY_TOKEN = "__REPLAY_TOKEN__";
+(function () {
+  const $ = id => document.getElementById(id);
+  const esc = s => String(s == null ? "" : s).replace(/[&<>"]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c]);
+  async function api(path, body) {
+    const opt = body === undefined ? { cache: "no-store" } : { method: "POST", headers: { "Content-Type": "application/json", "X-Replay-Token": window.REPLAY_TOKEN }, body: JSON.stringify(body) };
+    const r = await fetch(path, opt), j = await r.json().catch(() => ({}));
+    if (!r.ok) throw new Error(j.error || ("HTTP " + r.status));
+    return j;
+  }
+  const size = b => b > 1e9 ? (b / 1e9).toFixed(1) + " GB" : b > 1e6 ? (b / 1e6).toFixed(0) + " MB" : (b / 1e3).toFixed(0) + " KB";
+  let CFG = null;
+  const inputs = {};
+
+  function buildFields() {
+    for (const grp of ["folders", "server"]) {
+      const host = $("fields-" + grp); host.innerHTML = "";
+      for (const f of CFG.fields.filter(x => x.group === grp)) {
+        const row = document.createElement("div"); row.className = "f";
+        const exists = f.kind === "path" ? (f.exists ? `<span class="ok">✓ vorhanden</span>` : `<span class="bad">fehlt</span>`) : "";
+        const input = f.kind === "bool" ? `<label class="tk-chk" style="padding-top:7px"><input id="in-${f.key}" type="checkbox" ${f.effective ? "checked" : ""}> <span>${f.effective ? "ja" : "nein"}</span></label>` : `<input id="in-${f.key}" value="${esc(f.set)}" placeholder="${esc(f.default)}" spellcheck="false">`;
+        row.innerHTML = `<label for="in-${f.key}">${esc(f.label)}</label>${input}
+          <div class="eff">${f.kind === "path" ? "Wirksam: " + esc(f.effective) + " · " + exists : ""}${f.restart ? ' <span class="bad">(Neustart nötig)</span>' : ""}</div>
+          <div class="help">${esc(f.help)}</div>`;
+        host.append(row);
+        const inp = row.querySelector("input"); inputs[f.key] = inp; inp.oninput = dirty; inp.onchange = () => { if (inp.type === "checkbox") inp.nextElementSibling.textContent = inp.checked ? "ja" : "nein"; dirty(); };
+      }
+    }
+    $("cfgpath").textContent = CFG.config_file; $("first").hidden = !CFG.first_start;
+    dirty();
+  }
+  function changes() { const out = {}; for (const f of CFG.fields) { const inp = inputs[f.key]; const v = inp.type === "checkbox" ? (inp.checked ? "1" : "0") : inp.value.trim(); const was = inp.type === "checkbox" ? (f.effective ? "1" : "0") : (f.set || ""); if (v !== was) out[f.key] = v; } return out; }
+  function dirty() { const n = Object.keys(changes()).length; $("save").disabled = !n; $("msg").textContent = n ? `${n} Änderung${n > 1 ? "en" : ""} nicht gespeichert` : ""; }
+  $("save").onclick = async () => {
+    try {
+      const j = await api("/api/config", { settings: changes() });
+      CFG = j; buildFields();
+      $("msg").innerHTML = j.restart && j.restart.length ? `<span class="bad">Gespeichert – ${j.restart.join(", ")} wirkt nach einem Neustart des Servers.</span>` : `<span class="ok">Gespeichert.</span>`;
+      loadInventory();
+    } catch (e) { $("msg").innerHTML = `<span class="err">${esc(e.message)}</span>`; }
+  };
+  $("mkdirs").onclick = async () => {
+    try { const j = await api("/api/folders/create", {}); $("msg").textContent = j.created.length ? "Angelegt: " + j.created.join(", ") : "Alle Ordner sind da.";
+          CFG = await api("/api/config"); buildFields(); loadInventory(); }
+    catch (e) { $("msg").innerHTML = `<span class="err">${esc(e.message)}</span>`; }
+  };
+
+  async function loadInventory() {
+    let inv; try { inv = await api("/api/inventory"); } catch (e) { $("inv").innerHTML = `<div class="empty err">${esc(e.message)}</div>`; return; }
+    $("inv-sub").innerHTML = inv.exists ? `${esc(inv.path)} · ${size(inv.size)}` : `<span class="bad">${esc(inv.path)} gibt es nicht – oben den Ordner der Rithmic Bridge eintragen.</span>`;
+    if (!inv.rows.length) { $("inv").innerHTML = `<div class="empty">Keine vollständigen Handelstage gefunden (erwartet: <code>1m-bars/ES/&lt;Datum&gt;_bars.csv</code>, <code>_levels.csv</code>, <code>.meta.json</code>).</div>`; return; }
+    $("ck-inst").innerHTML = inv.rows.map(r => `<option value="${esc(r.name)}">${esc(r.name)}</option>`).join("");
+    if (!$("ck-date").value) $("ck-date").value = inv.rows[0].last;
+    $("inv").innerHTML = `<table class="grid"><thead><tr><th>Instrument</th><th class="num">Handelstage</th><th>Erster</th><th>Letzter</th><th class="num">mit 1-Sekunden-Bars</th><th class="num">mit Tick-Export</th><th>Lücken (Werktage)</th></tr></thead><tbody>` +
+      inv.rows.map(r => `<tr><td><b>${esc(r.name)}</b></td><td class="num">${r.days}</td><td>${r.first}</td><td>${r.last}</td>
+        <td class="num ${r.with_seconds < r.days ? "bad" : ""}">${r.with_seconds}</td><td class="num">${r.with_ticks}</td>
+        <td class="miss" title="${esc(r.missing.join(", "))}">${r.missing.length ? r.missing.length + ": " + esc(r.missing.slice(0, 6).join(", ")) + (r.missing.length > 6 ? " …" : "") : "keine"}</td></tr>`).join("") +
+      `</tbody></table><div style="color:var(--muted);font-size:12px;margin-top:8px">Ohne 1-Sekunden-Bars endet ein Tag im Replay auf der vollen Minute und Orders lassen sich dort nicht füllen. Mit Tick-Export füllt der Broker jeden Trade exakt; sonst folgt er einem Pfad durch die 1-Sekunden-Bars. Feiertage erscheinen als Lücken.</div>`;
+  }
+  $("ck-go").onclick = async () => {
+    const inst = $("ck-inst").value, date = $("ck-date").value.trim();
+    if (!inst || !date) return;
+    try {
+      const j = await api(`/api/check?inst=${encodeURIComponent(inst)}&date=${encodeURIComponent(date)}`);
+      $("ck-out").innerHTML = j.findings.length ? `<div style="color:var(--text2);margin-bottom:4px">${j.findings.length} Befund${j.findings.length > 1 ? "e" : ""} in den Dateien dieses Tages (die Bridge, nicht das Tool):</div>` + j.findings.map(f => `<div class="bad">• ${esc(f.text)}</div>`).join("") : `<span class="ok">✓ Alles passt zusammen: jede Minute hat Levels, die sich auf ihr Volumen summieren, keine Lücke, die Sekunden stimmen mit den Minuten überein.</span>`;
+    } catch (e) { $("ck-out").innerHTML = `<span class="err">${esc(e.message)}</span>`; }
+  };
+  async function loadStatus() {
+    let st; try { st = await api("/api/status"); } catch (e) { $("live").innerHTML = `<div class="empty err">Der Server antwortet nicht: ${esc(e.message)}</div>`; return; }
+    $("receiver").textContent = st.receiver;
+    if (!st.feeds.length) { $("live").innerHTML = `<div class="empty">Gerade kommt nichts an.</div>`; return; }
+    $("live").innerHTML = `<table class="grid"><thead><tr><th>Quelle</th><th>Instrument</th><th>Chart</th><th>Kerzenabstand</th><th class="num">Alter</th><th>Prints</th><th class="num">Nachrichten</th></tr></thead><tbody>` +
+      st.feeds.map(f => `<tr><td>${esc(f.src)}</td><td><b>${esc(f.instrument)}</b></td><td>${esc(f.timeframe)}</td>
+        <td class="${f.candle_seconds && f.candle_seconds !== 60 ? "bad" : ""}">${f.candle_seconds ? f.candle_seconds + " s" + (f.candle_seconds !== 60 ? " – die Bridge muss 1-Minuten-Kerzen senden" : " ✓") : "–"}</td>
+        <td class="num ${f.stale ? "bad" : "ok"}">${f.age_s == null ? "–" : f.age_s.toFixed(0) + " s"}</td><td>${f.ticks ? "ja (Papierhandel live möglich)" : "nein"}</td><td class="num">${f.messages}</td></tr>`).join("") + `</tbody></table>`;
+  }
+
+  (async () => {
+    try { CFG = await api("/api/config"); buildFields(); } catch (e) { $("msg").innerHTML = `<span class="err">Der Server antwortet nicht: ${esc(e.message)}</span>`; return; }
+    loadInventory(); loadStatus(); setInterval(loadStatus, 3000);
+  })();
+})();
+</script>
+</body>
+</html>
